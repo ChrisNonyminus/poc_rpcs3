@@ -2,7 +2,7 @@
 
 #include "Emu/Cell/lv2/sys_fs.h"
 #include "Emu/Memory/vm_ptr.h"
-
+class PointerWrap;
 // CellFsRingBuffer.copy
 enum : s32
 {
@@ -41,3 +41,4 @@ struct CellFsAio
 	be_t<u64> size;
 	be_t<u64> user_data;
 };
+void CellFs_DoState(PointerWrap& p);

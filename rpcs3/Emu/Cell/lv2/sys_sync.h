@@ -13,7 +13,7 @@
 #include <deque>
 #include <thread>
 #include <string_view>
-
+class PointerWrap;
 // attr_protocol (waiting scheduling policy)
 enum lv2_protocol : u32
 {
@@ -84,7 +84,7 @@ private:
 	}
 
 public:
-
+	void DoState(PointerWrap& p);
 	static std::string name64(u64 name_u64)
 	{
 		const auto ptr = reinterpret_cast<const char*>(&name_u64);

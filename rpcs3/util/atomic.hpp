@@ -7,7 +7,6 @@
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
-
 extern "C"
 {
 	void _ReadWriteBarrier();
@@ -1121,7 +1120,6 @@ public:
 		: m_data(value)
 	{
 	}
-
 	// Unsafe direct access
 	type& raw()
 	{

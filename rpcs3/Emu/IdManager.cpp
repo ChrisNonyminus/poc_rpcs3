@@ -47,9 +47,8 @@ id_manager::id_map::pointer idm::allocate_id(const id_manager::id_key& info, u32
 void idm::DoState(PointerWrap& p)
 {
 	p.Do(g_map);
-	p.DoMarker("idm::g_map", 0xD0);
 	p.Do(g_id);
-	p.DoMarker("idm::g_id", 0xD1);
+	p.Do(id_manager::g_mutex);
 }
 
 void idm::init()

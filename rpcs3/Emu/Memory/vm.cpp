@@ -1387,11 +1387,15 @@ namespace vm
 	{
 		if (this == nullptr)
 			return;
+		//this->alloc(size);
 		p.Do(addr);
 		p.Do(size);
 		p.Do(flags);
+		p.Do(m);
+		p.Do(m_common);
 		// TODO
 		//p.Do(m_map);
+		
 		//p.Do(m_sup);
 		int i = 0;
 		/*if ()
@@ -1473,15 +1477,8 @@ namespace vm
 	void DoState(PointerWrap& p)
 	{
 		//https://github.com/VelocityRa/rpcs3/commit/eb61b9ae58d2c1dc65c1d5b51b49a7d17f0dbfc8
-		//
-		// g_locations
-		//
-		p.DoEachElement(g_locations, [](PointerWrap& pw, std::shared_ptr<vm::block_t> b) {
-			b->DoState(pw);
-			pw.DoMarker("vm::locations::block_t", 0xFD);
-		});
-		p.DoMarker("vm::locations", 0xFC);
-
+		
+		//p.Do(vm::block_map);
 		//
 		// g_pages
 		//
@@ -1493,7 +1490,7 @@ namespace vm
 		//case PointerWrap::MODE_READ:
 		//	p.Do(page_count);
 		//	p.Do(g_pages);
-
+		p.Do(g_pages);
 		//	break;
 
 		//case PointerWrap::MODE_WRITE:
@@ -1521,65 +1518,36 @@ namespace vm
 		//	}
 		//	break;
 		//}
-		for (int i = 0; i < g_pages.size(); i++)
+		for (int i = 0; i < g_pages.max_size(); i++)
 		{
 			p.Do(g_pages[i]);
+			p.Do(g_pages[i].raw());
 		}
-		p.DoMarker("vm::g_pages", 0xEA);
-
+		for (int i = 0; i < 32768; i++)
+		{
+			p.Do(vm::g_reservations[i]);
+		}
 		//
 		// g_mutex
 		//
 		p.Do(g_mutex);
-		p.DoMarker("vm::g_mutex", 0xEE);
 
-		//
-		// g_baseaddr
-		//
-		// TODO: write better code than this
-		//
-		
-		//long long x = 0x10000;
-		//while (x < 0x100000000)
-		//{
-		//	if (x >= 0x10000 && x < 0x1FFF0000)
-		//	{
-		//		/*if ()
-		//		{*/
-		//		p.Do(read8(x));
-		//		/*}*/
-		//	}
-		//	if (x >= 0x20000000 && x < 0x30000000)
-		//	{
-		//		p.Do(read8(x));
-		//	}
-		//	if (x >= 0xC0000000&&x < 0xD0000000)
-		//	{
-		//		p.Do(read8(x));
-		//	}
-		//	if (x >= 0xD0000000 && x < 0xE0000000)
-		//	{
-		//		p.Do(read8(x));
-		//	}
-		//	if (x >= 0xE0000000 && x < 0x100000000)
-		//	{
-		//			p.Do(read8(x));
-		//	}
-		//	x+=1;
-		//}
-		//p.DoMarker("vm::g_base_addr", 0xEF);
-		//
-		// g_tls_locked
-		//
-		// TODO:
 		p.Do(g_tls_locked);
-		p.DoMarker("vm::g_tls_locked", 0xF0);
 		//
 		// g_locks
 		//
 		// TODO:
 		p.Do(g_locks);
-		p.DoMarker("vm::g_locks", 0xF1);
+		//other stuff
+		//p.Do(vm::block_map);
+		p.Do(vm::g_shmem);
+		//
+		// g_locations
+		//
+		p.Do(g_locations);
+		p.DoEachElement(g_locations, [](PointerWrap& pw, std::shared_ptr<vm::block_t> b) {
+			b->DoState(pw);
+		});
 	}
 	static std::shared_ptr<block_t> _get_map(memory_location_t location, u32 addr)
 	{

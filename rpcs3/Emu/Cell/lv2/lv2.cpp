@@ -47,7 +47,7 @@
 #include "sys_storage.h"
 #include "sys_uart.h"
 #include "sys_crypto_engine.h"
-
+#include "3rdparty/ChunkFile.h"
 extern std::string ppu_get_syscall_name(u64 code);
 
 template <>
@@ -1137,6 +1137,23 @@ bool lv2_obj::yield(cpu_thread& thread)
 {
 	vm::temporary_unlock(thread);
 	return awake(&thread, yield_cmd);
+}
+
+void lv2_obj::DoState(PointerWrap& p)
+{
+	p.Do(this->g_mutex);
+	p.Do(this->g_pending);
+	p.Do(this->g_ppu);
+	p.Do(this->g_to_awake);
+	int a = 0;
+	while (a < this->g_waiting.size())
+	{
+		p.Do(this->g_waiting.at(a).first);
+		a++;
+	}
+	//p.Do(this->id_count);
+	//p.Do(this->id_step);
+	//p.Do(this->max_timeout);
 }
 
 void lv2_obj::sleep_unlocked(cpu_thread& thread, u64 timeout)

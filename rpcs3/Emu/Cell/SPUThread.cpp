@@ -1508,74 +1508,86 @@ void spu_thread::cpu_init()
 void spu_thread::DoState(PointerWrap& p)
 {
 	cpu_thread::DoState(p);
-	// TODO:
-
-	p.Do(id_base);
-	p.Do(id_step);
-	p.Do(id_count);
-
-	p.Do(gpr);
-	p.Do(fpscr);
-
-	p.Do(ch_mfc_cmd);
-
-	// MFC command queue (consumer: MFC thread)
-	//lf_spsc<spu_mfc_cmd, 16> mfc_queue;
-
-	// MFC command proxy queue (consumer: MFC thread)
-	//lf_mpsc<spu_mfc_cmd, 8> mfc_proxy;
-
-	p.Do(rtime);
-	p.Do(rdata);
-	p.Do(raddr);
-
-	p.Do(srr0);
-	p.Do(ch_tag_upd);
-	p.Do(ch_tag_mask);
-	p.Do(ch_tag_stat);
-	p.Do(ch_stall_mask);
-	p.Do(ch_stall_stat);
-	p.Do(ch_atomic_stat);
-
-	p.Do(ch_in_mbox);
-
-	p.Do(mfc_prxy_mask);
-
-	p.Do(ch_out_mbox);
-	p.Do(ch_out_intr_mbox);
-
-	p.Do(snr_config);
-
-	p.Do(spu_thread::ch_snr1);
-	p.Do(spu_thread::ch_snr2);
-
-	p.Do(spu_thread::ch_events);
-
-	p.Do(ch_dec_start_timestamp);
-	p.Do(ch_dec_value);
-
-	p.Do(run_ctrl);
-	p.Do(spu_thread::state);
-	p.Do(spu_thread::status_npc);
-
-	p.Do(int_ctrl);
-
-	//std::array<std::pair<u32, std::weak_ptr<lv2_event_queue>>, 32> spuq; // Event Queue Keys for SPU Thread
-	//std::weak_ptr<lv2_event_queue> spup[64]; // SPU Ports
-
-	p.Do(pc);
-	//const  index; // SPU index
-	//const u32 offset; // SPU LS offset
-	//lv2_spu_group* const group; // SPU Thread Group
-
-	//const std::string m_name; // Thread name
-
-	//std::exception_ptr pending_exception;
-
-	//std::array<struct spu_function_t*, 65536> compiled_cache{};
-	std::shared_ptr<class SPUDatabase> spu_db;
-	//std::shared_ptr<class spu_recompiler_base> spu_rec;
-	u32 recursion_level = 0;
+	p.Do(this->base_pc);
+	p.Do(this->block_counter);
+	p.Do(this->block_failure);
+	p.Do(this->block_hash);
+	p.Do(this->block_recover);
+	p.Do(this->ch_atomic_stat);
+	p.Do(this->ch_dec_start_timestamp);
+	p.Do(this->ch_dec_value);
+	p.Do(this->ch_events);
+	p.Do(this->ch_in_mbox);
+	p.Do(this->ch_mfc_cmd);
+	p.Do(this->ch_out_intr_mbox);
+	p.Do(this->ch_out_mbox);
+	p.Do(this->ch_snr1);
+	p.Do(this->ch_snr2);
+	p.Do(this->ch_stall_mask);
+	p.Do(this->ch_stall_stat);
+	p.Do(this->ch_tag_mask);
+	p.Do(this->ch_tag_upd);
+	p.Do(this->current_func);
+	p.Do(this->dbg_step_pc);
+	p.Do(this->debugger_float_mode);
+	p.Do(this->exit_status);
+	p.Do(this->fpscr);
+	p.Do(this->ftx);
+	p.Do(this->gpr);
+	p.Do(this->group);
+	p.Do(this->g_raw_spu_ctr);
+	p.Do(this->g_raw_spu_id);
+	p.Do(this->g_suspend_counter);
+	p.Do(this->g_threads_created);
+	p.Do(this->g_threads_deleted);
+	p.Do(this->id);
+	p.Do(this->id_base);
+	p.Do(this->id_count);
+	p.Do(this->id_step);
+	p.Do(this->index);
+	p.Do(this->interrupts_enabled);
+	p.Do(this->int_ctrl);
+	p.Do(this->jit);
+	p.Do(this->last_exit_status);
+	p.Do(this->last_faddr);
+	p.Do(this->last_fail);
+	p.Do(this->last_ftime);
+	p.Do(this->last_ftsc);
+	p.Do(this->last_succ);
+	p.Do(this->ls);
+	p.Do(this->lv2_id);
+	p.Do(this->max_mfc_dump_idx);
+	p.Do(this->memory_base_addr);
+	p.Do(this->mfc_barrier);
+	p.Do(this->mfc_dump_idx);
+	p.Do(this->mfc_fence);
+	p.Do(this->mfc_prxy_cmd);
+	p.Do(this->mfc_prxy_mask);
+	p.Do(this->mfc_prxy_mtx);
+	p.Do(this->mfc_prxy_write_state);
+	p.Do(this->mfc_queue);
+	p.Do(this->mfc_size);
+	p.Do(this->option);
+	p.Do(this->pc);
+	p.Do(this->raddr);
+	p.Do(this->range_lock);
+	p.Do(this->rdata);
+	p.Do(this->rtime);
+	p.Do(this->run_ctrl);
+	p.Do(this->run_ctrl_mtx);
+	p.Do(this->saved_native_sp);
+	p.Do(this->shm);
+	p.Do(this->snr_config);
+	p.Do(this->spup);
+	p.Do(this->spuq);
+	p.Do(this->spu_tname);
+	p.Do(this->srr0);
+	p.Do(this->stack_mirror);
+	p.Do(this->start_time);
+	p.Do(this->state);
+	p.Do(this->status_npc);
+	p.Do(this->stx);
+	p.Do(this->thread_type);
 }
 
 void spu_thread::cpu_return()

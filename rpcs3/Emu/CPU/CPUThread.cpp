@@ -1167,5 +1167,8 @@ void cpu_thread::DoState(PointerWrap& p)
 	p.Do(g_threads_created);
 	p.Do(g_threads_deleted);
 	p.Do(state);
-	p.Do(id); //state and id are causing errors :(
+	p.Do(id);
+	p.Do(block_hash);
+	p.Do(cpu_thread::g_suspend_counter);
+	p.Do(cpu_thread::g_tls_this_thread);
 }

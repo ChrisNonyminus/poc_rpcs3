@@ -8,7 +8,7 @@
 #include "Emu/VFS.h"
 #include "Emu/IdManager.h"
 #include "Utilities/StrUtil.h"
-
+#include "3rdparty/ChunkFile.h"
 LOG_CHANNEL(sys_fs);
 
 lv2_fs_mount_point g_mp_sys_dev_root;
@@ -246,6 +246,10 @@ fs::file lv2_file::make_view(const std::shared_ptr<lv2_file>& _file, u64 offset)
 	fs::file result;
 	result.reset(std::make_unique<lv2_file::file_view>(_file, offset));
 	return result;
+}
+
+void SysFS_DoState(PointerWrap& p)
+{
 }
 
 error_code sys_fs_test(ppu_thread&, u32 arg1, u32 arg2, vm::ptr<u32> arg3, u32 arg4, vm::ptr<char> buf, u32 buf_size)

@@ -6,7 +6,7 @@
 
 #include <string>
 #include <mutex>
-
+class PointerWrap;
 // Open Flags
 enum : s32
 {
@@ -459,6 +459,7 @@ struct CellFsMountInfo
 
 CHECK_SIZE(CellFsMountInfo, 0x94);
 
+void SysFS_DoState(PointerWrap& p);
 // Syscalls
 
 error_code sys_fs_test(ppu_thread& ppu, u32 arg1, u32 arg2, vm::ptr<u32> arg3, u32 arg4, vm::ptr<char> buf, u32 buf_size);

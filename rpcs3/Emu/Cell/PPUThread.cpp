@@ -600,22 +600,58 @@ std::array<u32, 2> op_branch_targets(u32 pc, ppu_opcode_t op)
 void ppu_thread::DoState(PointerWrap& p)
 {
 	ppu_thread::cpu_thread::DoState(p);
+
+	p.Do(ppu_thread::block_hash);
+	p.Do(ppu_thread::cmd_notify);
+	p.Do(ppu_thread::cmd_queue);
+	p.Do(ppu_thread::cr);
+	p.Do(ppu_thread::cia);
+	p.Do(ppu_thread::ctr);
+	p.Do(ppu_thread::current_function);
+	p.Do(ppu_thread::dbg_step_pc);
+	p.Do(ppu_thread::entry_func);
+	p.Do(ppu_thread::fpr);
+	p.Do(fpscr);
+	p.Do(gpr);
+	p.Do(ppu_thread::g_suspend_counter);
+	p.Do(ppu_thread::g_threads_created);
+	p.Do(ppu_thread::g_threads_deleted);
+	p.Do(id);
 	p.Do(id_base);
 	p.Do(id_step);
 	p.Do(id_count);
-
-	p.Do(gpr);
-	p.Do(fpscr);
-
-	p.Do(ppu_thread::cmd_queue);
+	//p.Do(ppu_thread::id_invl_range);
+	//p.Do(ppu_thread::jm_mask);
+	p.Do(ppu_thread::joiner);
+	p.Do(ppu_thread::last_faddr);
+	p.Do(ppu_thread::last_fail);
+	p.Do(ppu_thread::last_ftime);
+	p.Do(ppu_thread::last_ftsc);
+	p.Do(ppu_thread::last_function);
+	p.Do(ppu_thread::last_succ);
+	p.Do(ppu_thread::lr);
+	//p.Do(ppu_thread::nj);
+	p.Do(ppu_thread::prio);
+	p.Do(ppu_thread::ppu_tname);
 	p.Do(rtime);
 	p.Do(rdata);
-	p.Do(raddr);
-	p.Do(ppu_thread::cia);
-	p.Do(ppu_thread::fpr);
+	p.Do(raddr);/*
+	p.Do(ppu_thread::sat);
+	p.Do(ppu_thread::saved_native_sp);
+	p.Do(ppu_thread::stack_addr);
+	p.Do(ppu_thread::stack_size);
+	p.Do(ppu_thread::start_time);*/
+	p.Do(ppu_thread::sat);
+	p.Do(ppu_thread::saved_native_sp);
+	p.Do(ppu_thread::stack_addr);
+	p.Do(ppu_thread::stack_size);
+	p.Do(ppu_thread::start_time);
 	p.Do(ppu_thread::state);
-	p.Do(id);
-	p.Do(ppu_thread::ppu_tname);
+	p.Do(ppu_thread::syscall_args);
+	p.Do(ppu_thread::use_full_rdata);
+	p.Do(ppu_thread::vr);
+	p.Do(ppu_thread::vrsave);
+	p.Do(ppu_thread::xer);
 }
 std::string ppu_thread::dump_regs() const
 {

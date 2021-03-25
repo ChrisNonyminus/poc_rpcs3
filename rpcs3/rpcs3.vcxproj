@@ -205,7 +205,8 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <BaseAddress>0x10000</BaseAddress>
       <DelayLoadDLLs>xaudio2_9redist.dll</DelayLoadDLLs>
-      <ForceFileOutput>Enabled</ForceFileOutput>
+      <ForceFileOutput>
+      </ForceFileOutput>
     </Link>
     <Midl>
       <DefaultCharType>Unsigned</DefaultCharType>

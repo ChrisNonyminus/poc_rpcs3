@@ -8,7 +8,7 @@
 #include "cellFs.h"
 
 #include "Utilities/StrUtil.h"
-
+#include "3rdparty/ChunkFile.h"
 #include <mutex>
 
 LOG_CHANNEL(cellFs);
@@ -1119,3 +1119,7 @@ DECLARE(ppu_module_manager::cellFs)("sys_fs", []()
 	REG_FUNC(sys_fs, cellFsWrite).flag(MFF_PERFECT);
 	REG_FUNC(sys_fs, cellFsWriteWithOffset);
 });
+
+void CellFs_DoState(PointerWrap& p)
+{
+}

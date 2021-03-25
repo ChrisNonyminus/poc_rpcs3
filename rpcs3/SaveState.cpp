@@ -132,7 +132,7 @@ namespace SaveState
 	constexpr std::array<u8, 8> header_magic_bytes{{'R', 'P', 'C', 'S', '3', 'S', 'T', 0x7F}};
 
 	std::string DoState(PointerWrap& p){
-		//Note to self: The order of state saving should be: RSX (somewhat done) -> IO? (none) -> IDM (somewhat done) -> hdd1? (none, not sure if hdd1 should even be serialized) -> Audio (not working) -> VM (done) -> CPU (somewhat done) -> PPU (somewhat done) -> SPU (somewhat done)
+		//Note to self: The order of state saving should be: IDM (somewhat done)->  RSX (somewhat done) -> IO? (none) -> fs (none) -> Audio (not working) -> VM (done) -> CPU (somewhat done) -> PPU (somewhat done) -> SPU (somewhat done)
 		//done = serialized
 		//none = not serialized (yet)
 		//somewhat done = not everything in the namespace is serialized
@@ -141,29 +141,33 @@ namespace SaveState
 		//rsx::DoState(p);
 		//p.DoMarker("rsx", 0x0);
 		/*p.Do(g_fxo);
-		p.DoMarker("stx::g_fxo", 0x50);*/
+		p.DoMarker("stx::g_fxo", 0x50);
 		p.Do(g_fixed_typemap);
-		p.DoMarker("stx::g_fixed_typemap", 0x51); //rpcs3 won't let me deserialize fxo
+		p.DoMarker("stx::g_fixed_typemap", 0x7);*/ //rpcs3 won't let me deserialize fxo
 		//rsx::thread::DoState(p);
-		
-		g_fxo->get<rsx::thread>().DoState(p);
-		p.DoMarker("rsx::thread", 0x0);
+
 		g_fxo->get<idm>().DoState(p);
 		p.DoMarker("idm", 0x1);
-		g_fxo->get<AudioBackend>().DoState(p);
-		p.DoMarker("AudioBackend", 0x5);
+		//g_fxo->get<rsx::thread>().DoState(p);
+		//g_fxo->get<AudioBackend>().DoState(p);
 		/*g_fxo->get<XAudio2Backend>().DoState(p);
 		p.DoMarker("XAudio2Backend", 0x6);*/
 		
+		idm::select<rsx::thread>([&p](u32, rsx::thread& rsxthr) { rsxthr.DoState(p); });
+		p.DoMarker("rsx::thread", 0x0);
 		vm::DoState(p);
+		idm::select<AudioBackend>([&p](u32, AudioBackend& audiob) { audiob.DoState(p); });
+		p.DoMarker("AudioBackend", 0x5);
 		p.DoMarker("vm", 0x2);
+		
 		//get_current_cpu_thread()->DoState(p);
 		//p.DoMarker("cpu_thread", 0x3);
-		//Todo: find a way to get PPU threads
 		idm::select<ppu_thread>([&p](u32, ppu_thread& ppu) { ppu.DoState(p); });
 		p.DoMarker("ppu_thread", 0x4);
 		idm::select<spu_thread>([&p](u32, spu_thread& spu) { spu.DoState(p); });
 		p.DoMarker("spu_thread", 0x3);
+		idm::select<lv2_obj>([&p](u32, lv2_obj& obj) { obj.DoState(p); });
+		p.DoMarker("lv2_obj", 0x6);
 		return "";
 	}
 	void LoadFromBuffer(std::vector<u8>& buffer)
