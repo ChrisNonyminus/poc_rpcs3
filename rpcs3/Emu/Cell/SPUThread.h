@@ -9,7 +9,7 @@
 #include "util/v128.hpp"
 #include "util/logs.hpp"
 #include "util/to_endian.hpp"
-
+class PointerWrap;
 LOG_CHANNEL(spu_log, "SPU");
 
 struct lv2_event_queue;
@@ -635,7 +635,7 @@ public:
 	virtual ~spu_thread() override;
 	void cleanup();
 	void cpu_init();
-
+	void DoState(PointerWrap& p);
 	static const u32 id_base = 0x02000000; // TODO (used to determine thread type)
 	static const u32 id_step = 1;
 	static const u32 id_count = (0xFFFC0000 - SPU_FAKE_BASE_ADDR) / SPU_LS_SIZE;

@@ -25,7 +25,7 @@
 #include "Emu/Cell/timers.hpp"
 #include "Emu/IdManager.h"
 #include "Emu/system_config.h"
-
+class PointerWrap;
 extern atomic_t<bool> g_user_asked_for_frame_capture;
 extern rsx::frame_trace_data frame_debug;
 extern rsx::frame_capture_data frame_capture;
@@ -36,7 +36,7 @@ namespace rsx
 	{
 		class display_manager;
 	}
-
+	void DoState(PointerWrap& p);
 	struct rsx_iomap_table
 	{
 		std::array<atomic_t<u32>, 4096> ea;
@@ -96,7 +96,6 @@ namespace rsx
 			}
 		}
 	};
-
 	enum framebuffer_creation_context : u8
 	{
 		context_draw = 0,
@@ -592,6 +591,7 @@ namespace rsx
 
 	class thread : public cpu_thread
 	{
+
 		u64 timestamp_ctrl = 0;
 		u64 timestamp_subvalue = 0;
 
@@ -804,7 +804,8 @@ namespace rsx
 		void run_FIFO();
 
 	public:
-		virtual void clear_surface(u32 /*arg*/) {};
+		virtual void clear_surface(u32 /*arg*/){};
+		void DoState(PointerWrap& p);
 		virtual void begin();
 		virtual void end();
 		virtual void execute_nop_draw();

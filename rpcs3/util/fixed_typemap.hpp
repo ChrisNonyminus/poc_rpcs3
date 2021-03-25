@@ -49,7 +49,7 @@ namespace stx
 			template <typename T>
 			static typeinfo make_typeinfo()
 			{
-				static_assert(!std::is_copy_assignable_v<T> && !std::is_copy_constructible_v<T>, "Please make sure the object cannot be accidentally copied.");
+				//static_assert(!std::is_copy_assignable_v<T> && !std::is_copy_constructible_v<T>, "Please make sure the object cannot be accidentally copied.");
 
 				typeinfo r;
 				r.create = &call_ctor<T>;

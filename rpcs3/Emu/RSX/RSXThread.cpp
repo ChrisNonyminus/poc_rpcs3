@@ -27,7 +27,7 @@
 #include <thread>
 #include <unordered_set>
 #include <cfenv>
-
+#include "3rdparty/ChunkFile.h"
 class GSRender;
 
 #define CMD_DEBUG 0
@@ -204,6 +204,38 @@ namespace rsx
 		return { _min_index, (_max_index - _min_index) + 1 };
 	}
 
+	void thread::DoState(PointerWrap& p)
+	{
+		p.Do(m_rsx_thread);
+		p.DoMarker("rsx::thread::m_rsx_thread", 0x52);
+		p.Do(m_framebuffer_layout);
+		p.DoMarker("rsx::thread::m_framebuffer_layout", 0x53);
+		p.Do(thread::backend_config);
+		p.DoMarker("rsx::thread::backend_config", 0x54);
+		p.Do(thread::current_display_buffer);
+		p.DoMarker("rsx::thread::current_display_buffer", 0x55);
+		p.Do(thread::current_fragment_program);
+		p.DoMarker("rsx::thread::current_fragment_program", 0x56);
+		p.Do(thread::current_vertex_program);
+		p.DoMarker("rsx::thread::current_vertex_program", 0x57);
+		p.Do(thread::fifo_ret_addr);
+		p.DoMarker("rsx::thread::fifo_ret_addr", 0x58);
+		p.Do(thread::m_depth_surface_info);
+		p.DoMarker("rsx::thread::m_depth_surface_info", 0x59);
+		p.Do(thread::m_surface_info);
+		p.DoMarker("rsx::thread::m_surface_info", 0x5A);
+		p.Do(thread::m_graphics_state);
+		p.DoMarker("rsx::thread::m_graphics_state", 0x5B);
+		p.Do(thread::state);
+		p.DoMarker("rsx::thread::state", 0x5C);
+		p.Do(thread::stats);
+		p.DoMarker("rsx::thread::stats", 0x5D);
+	}
+	void DoState(PointerWrap& p)
+	{
+		
+
+	}
 	u32 get_vertex_type_size_on_host(vertex_base_type type, u32 size)
 	{
 		switch (type)

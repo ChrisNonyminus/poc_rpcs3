@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "AudioBackend.h"
 #include "Emu/system_config.h"
-
+#include "3rdparty/ChunkFile.h"
 AudioBackend::AudioBackend()
 {
 	m_convert_to_u16 = static_cast<bool>(g_cfg.audio.convert_to_u16);
@@ -40,6 +40,15 @@ AudioBackend::AudioBackend()
 	default:
 		fmt::throw_exception("Unknown audio channel mode %s (%d)", downmix, static_cast<int>(downmix));
 	}
+}
+
+void AudioBackend::DoState(PointerWrap& p)
+{
+	p.Do(AudioBackend::m_channels);
+	p.Do(AudioBackend::m_convert_to_u16);
+	p.Do(AudioBackend::m_sample_size);
+	p.Do(AudioBackend::m_sampling_rate);
+	p.Do(AudioBackend::m_start_threshold);
 }
 
 /*

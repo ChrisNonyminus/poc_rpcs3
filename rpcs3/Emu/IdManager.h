@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+class PointerWrap;
 // Helper namespace
 namespace id_manager
 {
@@ -24,7 +25,6 @@ namespace id_manager
 		static constexpr u32 invalid = 0;
 		static constexpr std::pair<u32, u32> invl_range{0, 0};
 	};
-
 	template <typename T, typename = void>
 	struct invl_range_extract_impl
 	{
@@ -317,6 +317,7 @@ class idm
 	}
 
 public:
+	void DoState(PointerWrap& p);
 	// Initialize object manager
 	static void init();
 

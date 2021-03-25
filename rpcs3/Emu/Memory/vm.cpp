@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "vm_locking.h"
 #include "vm_ptr.h"
 #include "vm_ref.h"
@@ -8,6 +8,7 @@
 #include "Utilities/mutex.h"
 #include "Utilities/Thread.h"
 #include "Utilities/address_range.h"
+#include "Utilities/File.h"
 #include "Emu/CPU/CPUThread.h"
 #include "Emu/Cell/lv2/sys_memory.h"
 #include "Emu/RSX/RSXThread.h"
@@ -19,9 +20,8 @@
 
 #include "util/vm.hpp"
 #include "util/asm.hpp"
-
+#include "3rdparty/ChunkFile.h"
 LOG_CHANNEL(vm_log, "VM");
-
 namespace vm
 {
 	static u8* memory_reserve_4GiB(void* _addr, u64 size = 0x100000000)
@@ -118,7 +118,6 @@ namespace vm
 			}
 		}
 	}
-
 	static void _register_lock(cpu_thread* _cpu)
 	{
 		for (u32 i = 0, max = g_cfg.core.ppu_threads;;)
@@ -1384,6 +1383,28 @@ namespace vm
 		return imp_used(lock);
 	}
 
+	void block_t::DoState(PointerWrap& p)
+	{
+		if (this == nullptr)
+			return;
+		p.Do(addr);
+		p.Do(size);
+		p.Do(flags);
+		// TODO
+		//p.Do(m_map);
+		//p.Do(m_sup);
+		int i = 0;
+		/*if ()
+		{*/
+			while (i < size)
+			{
+				if (vm::check_addr(i + addr) == true)
+					p.Do(g_sudo_addr[i + addr]);
+				i++;
+			}
+		//}
+		p.DoMarker("block_t", 0xFA);
+	}
 	static bool _test_map(u32 addr, u32 size)
 	{
 		const auto range = utils::address_range::start_length(addr, size);
@@ -1448,7 +1469,118 @@ namespace vm
 
 		return block;
 	}
+	
+	void DoState(PointerWrap& p)
+	{
+		//https://github.com/VelocityRa/rpcs3/commit/eb61b9ae58d2c1dc65c1d5b51b49a7d17f0dbfc8
+		//
+		// g_locations
+		//
+		p.DoEachElement(g_locations, [](PointerWrap& pw, std::shared_ptr<vm::block_t> b) {
+			b->DoState(pw);
+			pw.DoMarker("vm::locations::block_t", 0xFD);
+		});
+		p.DoMarker("vm::locations", 0xFC);
 
+		//
+		// g_pages
+		//
+		// (de)serialize each filled page only, not all g_pages
+		u64 page_count = 0;
+
+		//switch (p.GetMode())
+		//{
+		//case PointerWrap::MODE_READ:
+		//	p.Do(page_count);
+		//	p.Do(g_pages);
+
+		//	break;
+
+		//case PointerWrap::MODE_WRITE:
+		//case PointerWrap::MODE_MEASURE:
+		//case PointerWrap::MODE_VERIFY:
+		//	// go through g_pages and find out filled in pages (those that have a reservations/memory_page struct filled in)
+		//	for (u64 i = 0; i < g_pages.size(); ++i)
+		//	{
+		//		auto* page = &g_pages[i];
+		//		if (page.)
+		//			++page_count;
+		//	}
+		//	// write how many of them were filled in
+		//	p.Do(page_count);
+
+		//	// _then_ list them
+		//	for (u64 i = 0; i < g_pages.size(); ++i)
+		//	{
+		//		auto* page = &g_pages[i];
+		//		if (page->reservations)
+		//		{
+		//			p.Do(i);
+		//			page->DoState(p);
+		//		}
+		//	}
+		//	break;
+		//}
+		for (int i = 0; i < g_pages.size(); i++)
+		{
+			p.Do(g_pages[i]);
+		}
+		p.DoMarker("vm::g_pages", 0xEA);
+
+		//
+		// g_mutex
+		//
+		p.Do(g_mutex);
+		p.DoMarker("vm::g_mutex", 0xEE);
+
+		//
+		// g_baseaddr
+		//
+		// TODO: write better code than this
+		//
+		
+		//long long x = 0x10000;
+		//while (x < 0x100000000)
+		//{
+		//	if (x >= 0x10000 && x < 0x1FFF0000)
+		//	{
+		//		/*if ()
+		//		{*/
+		//		p.Do(read8(x));
+		//		/*}*/
+		//	}
+		//	if (x >= 0x20000000 && x < 0x30000000)
+		//	{
+		//		p.Do(read8(x));
+		//	}
+		//	if (x >= 0xC0000000&&x < 0xD0000000)
+		//	{
+		//		p.Do(read8(x));
+		//	}
+		//	if (x >= 0xD0000000 && x < 0xE0000000)
+		//	{
+		//		p.Do(read8(x));
+		//	}
+		//	if (x >= 0xE0000000 && x < 0x100000000)
+		//	{
+		//			p.Do(read8(x));
+		//	}
+		//	x+=1;
+		//}
+		//p.DoMarker("vm::g_base_addr", 0xEF);
+		//
+		// g_tls_locked
+		//
+		// TODO:
+		p.Do(g_tls_locked);
+		p.DoMarker("vm::g_tls_locked", 0xF0);
+		//
+		// g_locks
+		//
+		// TODO:
+		p.Do(g_locks);
+		p.DoMarker("vm::g_locks", 0xF1);
+	}
 	static std::shared_ptr<block_t> _get_map(memory_location_t location, u32 addr)
 	{
 		if (location != any)
@@ -1654,6 +1786,23 @@ namespace vm
 			std::memset(g_shmem, 0, sizeof(g_shmem));
 			std::memset(g_range_lock_set, 0, sizeof(g_range_lock_set));
 			g_range_lock_bits = 0;
+		}
+
+		void DoState(PointerWrap& p)
+		{
+			////assert(vm::g_reservations && "DoState called on memory_page that's not filled in. Wasted space!");
+
+			////p.Do(flags);
+			////p.Do(waiters);
+			//p.Do(atomic_t<u8>::m_data);
+
+			//for (auto i = 0; i < 4096; ++i)
+			//{
+			//	auto& res = ;
+			//	for (auto& r : res)
+			//		p.Do(r);
+			//}
+			p.DoMarker("ps3_", 0xFE);
 		}
 	}
 

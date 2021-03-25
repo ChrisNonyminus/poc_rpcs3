@@ -4,7 +4,7 @@
 #include "../Utilities/bit_set.h"
 
 #include <vector>
-
+class PointerWrap;
 // Thread state flags
 enum class cpu_flag : u32
 {
@@ -57,7 +57,7 @@ public:
 
 	// Process thread state, return true if the checker must return
 	bool check_state() noexcept;
-
+	void DoState(PointerWrap& p);
 	// Process thread state (pause)
 	[[nodiscard]] bool test_stopped()
 	{

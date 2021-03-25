@@ -2,7 +2,7 @@
 
 #include "util/types.hpp"
 #include "Utilities/StrFmt.h"
-
+class PointerWrap;
 enum : u32
 {
 	DEFAULT_AUDIO_SAMPLING_RATE = 48000,
@@ -24,7 +24,7 @@ public:
 	AudioBackend();
 
 	virtual ~AudioBackend() = default;
-
+	void DoState(PointerWrap& p);
 	/*
 	 * Pure virtual methods
 	 */

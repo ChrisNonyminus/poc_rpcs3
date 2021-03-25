@@ -8,6 +8,7 @@
 
 #include "util/to_endian.hpp"
 
+#include "3rdparty/ChunkFile.h"
 namespace utils
 {
 	class shm;
@@ -125,10 +126,12 @@ namespace vm
 		// Get allocated memory count
 		u32 used();
 
+		void DoState(PointerWrap& p);
+
 		// Internal
 		u32 imp_used(const vm::writer_lock&);
 	};
-
+	void DoState(PointerWrap& p);
 	// Create new memory block with specified parameters and return it
 	std::shared_ptr<block_t> map(u32 addr, u32 size, u64 flags = 0);
 

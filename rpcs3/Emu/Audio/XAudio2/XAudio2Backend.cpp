@@ -11,7 +11,7 @@
 #include "XAudio2Backend.h"
 #include <Windows.h>
 #include <system_error>
-
+#include "3rdparty/ChunkFile.h"
 #pragma comment(lib, "xaudio2_9redist.lib")
 
 LOG_CHANNEL(XAudio);
@@ -42,6 +42,18 @@ XAudio2Backend::XAudio2Backend()
 	// All succeeded, "commit"
 	m_xaudio2_instance = std::move(instance);
 }
+
+//void XAudio2Backend::DoState(PointerWrap& p)
+//{
+//	p.Do(XAudio2Backend::m_channels);
+//	p.Do(m_convert_to_u16);
+//	p.Do(m_master_voice);
+//	p.Do(m_sample_size);
+//	p.Do(m_sampling_rate);
+//	p.Do(m_source_voice);
+//	p.Do(m_start_threshold);
+//	p.Do(m_xaudio2_instance);
+//}
 
 XAudio2Backend::~XAudio2Backend()
 {

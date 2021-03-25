@@ -18,7 +18,7 @@
 
 #include <immintrin.h>
 #include <emmintrin.h>
-
+#include "3rdparty/ChunkFile.h"
 DECLARE(cpu_thread::g_threads_created){0};
 DECLARE(cpu_thread::g_threads_deleted){0};
 DECLARE(cpu_thread::g_suspend_counter){0};
@@ -1161,4 +1161,11 @@ void cpu_thread::flush_profilers() noexcept
 	{
 		g_fxo->get<cpu_profiler>().registered.push(0);
 	}
+}
+void cpu_thread::DoState(PointerWrap& p)
+{
+	p.Do(g_threads_created);
+	p.Do(g_threads_deleted);
+	p.Do(state);
+	p.Do(id); //state and id are causing errors :(
 }

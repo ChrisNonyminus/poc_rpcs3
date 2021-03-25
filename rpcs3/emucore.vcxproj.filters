@@ -722,9 +722,6 @@
     <ClCompile Include="Emu\Cell\PPUTranslator.cpp">
       <Filter>Emu\Cell</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\timers.hpp">
-      <Filter>Emu\Cell</Filter>
-    </ClCompile>
     <ClCompile Include="Emu\CPU\CPUTranslator.cpp">
       <Filter>Emu\CPU</Filter>
     </ClCompile>
@@ -991,6 +988,9 @@
     </ClCompile>
     <ClCompile Include="Emu\Io\Turntable.cpp">
       <Filter>Emu\Io</Filter>
+    </ClCompile>
+    <ClCompile Include="SaveState.cpp">
+      <Filter>Emu</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1932,6 +1932,15 @@
     </ClInclude>
     <ClInclude Include="Loader\mself.hpp">
       <Filter>Loader</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\timers.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SaveState.h">
+      <Filter>Emu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\3rdparty\ChunkFile.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

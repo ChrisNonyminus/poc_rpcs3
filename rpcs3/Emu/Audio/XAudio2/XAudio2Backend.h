@@ -8,7 +8,7 @@
 
 #include <xaudio2redist.h>
 #include <wrl/client.h>
-
+class PointerWrap;
 
 class XAudio2Backend final : public AudioBackend
 {
@@ -19,6 +19,7 @@ private:
 
 public:
 	XAudio2Backend();
+	//void DoState(PointerWrap& p);
 	virtual ~XAudio2Backend() override;
 
 	virtual const char* GetName() const override { return "XAudio2"; };

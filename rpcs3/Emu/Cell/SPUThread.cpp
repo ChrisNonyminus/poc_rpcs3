@@ -34,7 +34,7 @@
 #include "util/v128.hpp"
 #include "util/v128sse.hpp"
 #include "util/sysinfo.hpp"
-
+#include "3rdparty/ChunkFile.h"
 using spu_rdata_t = decltype(spu_thread::rdata);
 
 template <>
@@ -1503,6 +1503,79 @@ void spu_thread::cpu_init()
 	int_ctrl[2].clear();
 
 	gpr[1]._u32[3] = 0x3FFF0; // initial stack frame pointer
+}
+
+void spu_thread::DoState(PointerWrap& p)
+{
+	cpu_thread::DoState(p);
+	// TODO:
+
+	p.Do(id_base);
+	p.Do(id_step);
+	p.Do(id_count);
+
+	p.Do(gpr);
+	p.Do(fpscr);
+
+	p.Do(ch_mfc_cmd);
+
+	// MFC command queue (consumer: MFC thread)
+	//lf_spsc<spu_mfc_cmd, 16> mfc_queue;
+
+	// MFC command proxy queue (consumer: MFC thread)
+	//lf_mpsc<spu_mfc_cmd, 8> mfc_proxy;
+
+	p.Do(rtime);
+	p.Do(rdata);
+	p.Do(raddr);
+
+	p.Do(srr0);
+	p.Do(ch_tag_upd);
+	p.Do(ch_tag_mask);
+	p.Do(ch_tag_stat);
+	p.Do(ch_stall_mask);
+	p.Do(ch_stall_stat);
+	p.Do(ch_atomic_stat);
+
+	p.Do(ch_in_mbox);
+
+	p.Do(mfc_prxy_mask);
+
+	p.Do(ch_out_mbox);
+	p.Do(ch_out_intr_mbox);
+
+	p.Do(snr_config);
+
+	p.Do(spu_thread::ch_snr1);
+	p.Do(spu_thread::ch_snr2);
+
+	p.Do(spu_thread::ch_events);
+
+	p.Do(ch_dec_start_timestamp);
+	p.Do(ch_dec_value);
+
+	p.Do(run_ctrl);
+	p.Do(spu_thread::state);
+	p.Do(spu_thread::status_npc);
+
+	p.Do(int_ctrl);
+
+	//std::array<std::pair<u32, std::weak_ptr<lv2_event_queue>>, 32> spuq; // Event Queue Keys for SPU Thread
+	//std::weak_ptr<lv2_event_queue> spup[64]; // SPU Ports
+
+	p.Do(pc);
+	//const  index; // SPU index
+	//const u32 offset; // SPU LS offset
+	//lv2_spu_group* const group; // SPU Thread Group
+
+	//const std::string m_name; // Thread name
+
+	//std::exception_ptr pending_exception;
+
+	//std::array<struct spu_function_t*, 65536> compiled_cache{};
+	std::shared_ptr<class SPUDatabase> spu_db;
+	//std::shared_ptr<class spu_recompiler_base> spu_rec;
+	u32 recursion_level = 0;
 }
 
 void spu_thread::cpu_return()

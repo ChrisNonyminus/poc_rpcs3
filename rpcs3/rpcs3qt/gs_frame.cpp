@@ -21,7 +21,7 @@
 #include <thread>
 
 #include "png.h"
-
+#include "..\SaveState.h"
 #ifdef _WIN32
 #include <windows.h>
 #elif defined(__APPLE__)
@@ -218,6 +218,18 @@ void gs_frame::keyPressEvent(QKeyEvent *keyEvent)
 			return;
 		}
 		break;
+	case Qt::Key_F7:
+	{
+		SaveState::SaveSavestate("E:\\test.sav");
+		return;
+	}
+	break;
+	case Qt::Key_F8:
+	{
+		SaveState::LoadSavestate("E:\\test.sav");
+		return;
+	}
+	break;
 	case Qt::Key_F12:
 		screenshot_toggle = true;
 		break;

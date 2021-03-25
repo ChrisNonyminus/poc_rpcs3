@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "Utilities/JIT.h"
 #include "Utilities/StrUtil.h"
 #include "Crypto/sha1.h"
@@ -74,7 +74,7 @@
 #include "util/v128.hpp"
 #include "util/v128sse.hpp"
 #include "util/sysinfo.hpp"
-
+#include "3rdparty/ChunkFile.h"
 const bool s_use_ssse3 = utils::has_ssse3();
 
 extern atomic_t<u64> g_watchdog_hold_ctr;
@@ -597,7 +597,26 @@ std::array<u32, 2> op_branch_targets(u32 pc, ppu_opcode_t op)
 
 	return res;
 }
+void ppu_thread::DoState(PointerWrap& p)
+{
+	ppu_thread::cpu_thread::DoState(p);
+	p.Do(id_base);
+	p.Do(id_step);
+	p.Do(id_count);
 
+	p.Do(gpr);
+	p.Do(fpscr);
+
+	p.Do(ppu_thread::cmd_queue);
+	p.Do(rtime);
+	p.Do(rdata);
+	p.Do(raddr);
+	p.Do(ppu_thread::cia);
+	p.Do(ppu_thread::fpr);
+	p.Do(ppu_thread::state);
+	p.Do(id);
+	p.Do(ppu_thread::ppu_tname);
+}
 std::string ppu_thread::dump_regs() const
 {
 	std::string ret;

@@ -8,7 +8,7 @@
 #include "util/v128.hpp"
 
 LOG_CHANNEL(ppu_log, "PPU");
-
+class PointerWrap;
 enum class ppu_cmd : u32
 {
 	null,
@@ -126,7 +126,7 @@ public:
 	virtual void cpu_sleep() override;
 	virtual void cpu_on_stop() override;
 	virtual ~ppu_thread() override;
-
+	void DoState(PointerWrap& p);
 	ppu_thread(const ppu_thread_params&, std::string_view name, u32 prio, int detached = 0);
 
 	u64 gpr[32] = {}; // General-Purpose Registers
