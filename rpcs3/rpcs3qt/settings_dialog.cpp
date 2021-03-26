@@ -193,9 +193,6 @@ settings_dialog::settings_dialog(std::shared_ptr<gui_settings> gui_settings, std
 	m_emu_settings->EnhanceCheckBox(ui->spuCache, emu_settings_type::SPUCache);
 	SubscribeTooltip(ui->spuCache, tooltips.settings.spu_cache);
 
-	m_emu_settings->EnhanceCheckBox(ui->enableScheduler, emu_settings_type::EnableThreadScheduler);
-	SubscribeTooltip(ui->enableScheduler, tooltips.settings.enable_thread_scheduler);
-
 	m_emu_settings->EnhanceCheckBox(ui->lowerSPUThrPrio, emu_settings_type::LowerSPUThreadPrio);
 	SubscribeTooltip(ui->lowerSPUThrPrio, tooltips.settings.lower_spu_thread_priority);
 
@@ -209,6 +206,21 @@ settings_dialog::settings_dialog(std::shared_ptr<gui_settings> gui_settings, std
 
 	m_emu_settings->EnhanceComboBox(ui->spuBlockSize, emu_settings_type::SPUBlockSize);
 	SubscribeTooltip(ui->gb_spuBlockSize, tooltips.settings.spu_block_size);
+
+	m_emu_settings->EnhanceComboBox(ui->threadsched, emu_settings_type::ThreadSchedulerMode);
+	if (constexpr u32 min_thread_count = 12; utils::get_thread_count() < min_thread_count)
+	{
+		ui->gb_threadsched->setDisabled(true);
+		SubscribeTooltip(ui->gb_threadsched,
+			tr(
+				"Changing the thread scheduler is not supported on CPUs with less than %0 threads.\n"
+				"\n"
+				"Control how RPCS3 utilizes the threads of your system.\n"
+				"Each option heavily depends on the game and on your CPU, it's recommended to try each option to find out which performs the best."
+			).arg(min_thread_count));
+	}
+	else
+		SubscribeTooltip(ui->gb_threadsched, tooltips.settings.enable_thread_scheduler);
 
 	m_emu_settings->EnhanceComboBox(ui->preferredSPUThreads, emu_settings_type::PreferredSPUThreads, true);
 	SubscribeTooltip(ui->gb_spu_threads, tooltips.settings.preferred_spu_threads);
@@ -1494,6 +1506,8 @@ settings_dialog::settings_dialog(std::shared_ptr<gui_settings> gui_settings, std
 
 		SubscribeTooltip(ui->cb_show_pup_install, tooltips.settings.show_pup_install);
 
+		SubscribeTooltip(ui->cb_show_obsolete_cfg_dialog, tooltips.settings.show_obsolete_cfg);
+
 		SubscribeTooltip(ui->gb_updates, tooltips.settings.check_update_start);
 
 		SubscribeTooltip(ui->useRichPresence, tooltips.settings.use_rich_presence);
@@ -1572,6 +1586,7 @@ settings_dialog::settings_dialog(std::shared_ptr<gui_settings> gui_settings, std
 		ui->cb_show_boot_game->setChecked(m_gui_settings->GetValue(gui::ib_confirm_boot).toBool());
 		ui->cb_show_pkg_install->setChecked(m_gui_settings->GetValue(gui::ib_pkg_success).toBool());
 		ui->cb_show_pup_install->setChecked(m_gui_settings->GetValue(gui::ib_pup_success).toBool());
+		ui->cb_show_obsolete_cfg_dialog->setChecked(m_gui_settings->GetValue(gui::ib_obsolete_cfg).toBool());
 
 		const QString updates_yes        = tr("Yes", "Updates");
 		const QString updates_background = tr("Background", "Updates");
@@ -1658,6 +1673,10 @@ settings_dialog::settings_dialog(std::shared_ptr<gui_settings> gui_settings, std
 		connect(ui->cb_show_pup_install, &QCheckBox::clicked, [this](bool val)
 		{
 			m_gui_settings->SetValue(gui::ib_pup_success, val);
+		});
+		connect(ui->cb_show_obsolete_cfg_dialog, &QCheckBox::clicked, [this](bool val)
+		{
+			m_gui_settings->SetValue(gui::ib_obsolete_cfg, val);
 		});
 
 		connect(ui->cb_custom_colors, &QCheckBox::clicked, [this](bool val)
@@ -1963,7 +1982,29 @@ int settings_dialog::exec()
 	QTimer::singleShot(0, [this]{ ui->tab_widget_settings->setCurrentIndex(m_tab_index); });
 
 	// Open a dialog if your config file contained invalid entries
-	QTimer::singleShot(10, [this] { m_emu_settings->OpenCorrectionDialog(this); });
+	QTimer::singleShot(10, [this]
+	{
+		m_emu_settings->OpenCorrectionDialog(this);
+
+		if (!m_emu_settings->ValidateSettings(false))
+		{
+			int result = QMessageBox::No;
+			m_gui_settings->ShowConfirmationBox(
+				tr("Remove obsolete settings?"),
+				tr(
+					"Your config file contains one or more obsolete entries.\n"
+					"Consider that a removal might render them invalid for other versions of RPCS3.\n"
+					"\n"
+					"Do you wish to let the program remove them for you now?\n"
+					"This change will only be final when you save the config."
+				), gui::ib_obsolete_cfg, &result, this);
+
+			if (result == QMessageBox::Yes)
+			{
+				m_emu_settings->ValidateSettings(true);
+			}
+		}
+	});
 
 	return QDialog::exec();
 }

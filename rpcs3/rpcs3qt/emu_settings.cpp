@@ -139,6 +139,10 @@ void emu_settings::LoadSettings(const std::string& title_id)
 	// Add game config
 	if (!title_id.empty())
 	{
+		// Remove obsolete settings of the global config before adding the custom settings.
+		// Otherwise we'll always trigger the "obsolete settings dialog" when editing custom configs.
+		ValidateSettings(true);
+
 		const std::string config_path_new = Emulator::GetCustomConfigPath(m_title_id);
 		const std::string config_path_old = Emulator::GetCustomConfigPath(m_title_id, true);
 		std::string custom_config_path;
@@ -174,10 +178,12 @@ void emu_settings::LoadSettings(const std::string& title_id)
 	}
 }
 
-void emu_settings::ValidateSettings()
+bool emu_settings::ValidateSettings(bool cleanup)
 {
-	std::function<void(int, const YAML::Node&, std::vector<std::string>&, cfg::_base*)> search_level;
-	search_level = [&search_level](int level, const YAML::Node& yml_node, std::vector<std::string>& keys, cfg::_base* cfg_base)
+	bool is_clean = true;
+
+	std::function<void(int, YAML::Node&, std::vector<std::string>&, cfg::_base*)> search_level;
+	search_level = [&search_level, &is_clean, &cleanup, this](int level, YAML::Node& yml_node, std::vector<std::string>& keys, cfg::_base* cfg_base)
 	{
 		if (!yml_node || !yml_node.IsMap())
 		{
@@ -208,30 +214,59 @@ void emu_settings::ValidateSettings()
 
 			if (cfg_node)
 			{
-				search_level(next_level, yml_node[key], keys, cfg_node);
+				YAML::Node next_node = yml_node[key];
+				search_level(next_level, next_node, keys, cfg_node);
 			}
 			else
 			{
-				std::string key;
-				for (usz i = 0; i < keys.size(); i++)
+				const auto get_full_key = [&keys](const std::string& seperator) -> std::string
 				{
-					key += keys[i];
-					if (i < keys.size() - 1) key += ": ";
+					std::string full_key;
+					for (usz i = 0; i < keys.size(); i++)
+					{
+						full_key += keys[i];
+						if (i < keys.size() - 1) full_key += seperator;
+					}
+					return full_key;
+				};
+
+				is_clean = false;
+
+				if (cleanup)
+				{
+					if (!yml_node.remove(key))
+					{
+						cfg_log.error("Could not remove config entry: %s", get_full_key(": "));
+						is_clean = true; // abort
+						return;
+					}
+
+					// Let's only remove one entry at a time. I got some weird issues when doing all at once.
+					return;
 				}
-				cfg_log.warning("Unknown config entry found: %s", key);
+				else
+				{
+					cfg_log.warning("Unknown config entry found: %s", get_full_key(": "));
+				}
 			}
 		}
 	};
 
 	cfg_root root;
 	std::vector<std::string> keys;
-	search_level(0, m_current_settings, keys, &root);
+
+	do
+	{
+		is_clean = true;
+		search_level(0, m_current_settings, keys, &root);
+	}
+	while (cleanup && !is_clean);
+
+	return is_clean;
 }
 
 void emu_settings::SaveSettings()
 {
-	ValidateSettings();
-
 	YAML::Emitter out;
 	emit_data(out, m_current_settings);
 
@@ -798,6 +833,14 @@ QString emu_settings::GetLocalizedSetting(const QString& original, emu_settings_
 		case spu_block_size_type::safe: return tr("Safe", "SPU block size");
 		case spu_block_size_type::mega: return tr("Mega", "SPU block size");
 		case spu_block_size_type::giga: return tr("Giga", "SPU block size");
+		}
+		break;
+	case emu_settings_type::ThreadSchedulerMode:
+		switch (static_cast<thread_scheduler_mode>(index))
+		{
+		case thread_scheduler_mode::old: return tr("RPCS3 Scheduler", "Thread Scheduler Mode");
+		case thread_scheduler_mode::alt: return tr("RPCS3 Alternative Scheduler", "Thread Scheduler Mode");
+		case thread_scheduler_mode::os: return tr("Operating System", "Thread Scheduler Mode");
 		}
 		break;
 	case emu_settings_type::EnableTSX:
