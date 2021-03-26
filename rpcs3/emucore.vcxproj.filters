@@ -991,6 +991,8 @@
     </ClCompile>
     <ClCompile Include="SaveState.cpp">
       <Filter>Emu</Filter>
+    <ClCompile Include="libfs_utility_init.cpp">
+      <Filter>Emu\Cell\Modules</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
