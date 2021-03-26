@@ -1398,6 +1398,15 @@ namespace vm
 		p.Do(flags);
 		p.Do(m);
 		p.Do(m_common);
+		auto& m_map = (m.*block_map)();
+		for (auto& entry : (m.*block_map)())
+		{
+			p.Do(entry);
+			p.Do(entry.first);
+
+			p.Do(entry.second.first);
+			p.Do(entry.second.second);
+		}
 		// TODO
 		//p.Do(m_map);
 		//p.Do(m_sup);
@@ -1412,7 +1421,6 @@ namespace vm
 				i++;
 			}
 		//}
-		p.DoMarker("block_t", 0xFA);
 	}
 	static bool _test_map(u32 addr, u32 size)
 	{
@@ -1524,7 +1532,7 @@ namespace vm
 		//}
 		for (int i = 0; i < g_pages.max_size(); i++)
 		{
-			p.Do(g_pages[i]);
+			p.Do(g_pages.at(i));
 			p.Do(g_pages[i].raw());
 		}
 		for (int i = 0; i < 32768; i++)
@@ -1552,6 +1560,7 @@ namespace vm
 		for (int a = 0; a < 65536; a++)
 		{
 			p.Do(vm::g_shmem[a]);
+			p.Do(vm::g_shmem[a].raw());
 		}
 		//
 		// g_locations

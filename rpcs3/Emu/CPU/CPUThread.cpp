@@ -1164,6 +1164,8 @@ void cpu_thread::flush_profilers() noexcept
 }
 void cpu_thread::DoState(PointerWrap& p)
 {
+	if (this == nullptr)
+		return;
 	p.Do(g_threads_created);
 	p.Do(g_threads_deleted);
 	p.Do(state);

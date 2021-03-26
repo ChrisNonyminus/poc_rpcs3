@@ -132,7 +132,7 @@ namespace SaveState
 	constexpr std::array<u8, 8> header_magic_bytes{{'R', 'P', 'C', 'S', '3', 'S', 'T', 0x7F}};
 
 	std::string DoState(PointerWrap& p){
-		//Note to self: The order of state saving should be: IDM (somewhat done)->  RSX (somewhat done) -> IO? (none) -> fs (none) -> Audio (not working) -> VM (done) -> CPU (somewhat done) -> PPU (somewhat done) -> SPU (somewhat done)
+		//Note to self: The order of state saving should be: IDM (somewhat done)->  RSX (somewhat done) -> IO? (none) -> fs (none) -> Audio (not working) -> VM (somewhat done, need to serialize the amount of memory that's mapped) -> CPU (somewhat done) -> PPU (somewhat done) -> SPU (somewhat done)
 		//done = serialized
 		//none = not serialized (yet)
 		//somewhat done = not everything in the namespace is serialized
