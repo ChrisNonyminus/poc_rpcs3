@@ -1142,9 +1142,19 @@ bool lv2_obj::yield(cpu_thread& thread)
 void lv2_obj::DoState(PointerWrap& p)
 {
 	p.Do(this->g_mutex);
-	p.Do(this->g_pending);
+	for (int i = 0; i < this->g_ppu.size(); i++)
+	{
+		p.Do(this->g_ppu.at(i));
+	}
 	p.Do(this->g_ppu);
-	p.Do(this->g_to_awake);
+	for (int i = 0; i < this->g_pending.size(); i++)
+	{
+		p.Do(this->g_pending.at(i));
+	}
+	for (int i = 0; i < this->g_to_awake.size(); i++)
+	{
+		p.Do(this->g_to_awake.at(i));
+	}
 	int a = 0;
 	while (a < this->g_waiting.size())
 	{

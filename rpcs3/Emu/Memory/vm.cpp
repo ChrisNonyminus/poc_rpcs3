@@ -1387,6 +1387,11 @@ namespace vm
 	{
 		if (this == nullptr)
 			return;
+		/*auto& m_map = (m.*block_map)();
+		for (auto& entry : m_map)
+		{
+			p.Do(entry);
+		}*/
 		//this->alloc(size);
 		p.Do(addr);
 		p.Do(size);
@@ -1395,8 +1400,8 @@ namespace vm
 		p.Do(m_common);
 		// TODO
 		//p.Do(m_map);
-		
 		//p.Do(m_sup);
+		
 		int i = 0;
 		/*if ()
 		{*/
@@ -1477,14 +1482,13 @@ namespace vm
 	void DoState(PointerWrap& p)
 	{
 		//https://github.com/VelocityRa/rpcs3/commit/eb61b9ae58d2c1dc65c1d5b51b49a7d17f0dbfc8
-		
+
 		//p.Do(vm::block_map);
 		//
 		// g_pages
 		//
 		// (de)serialize each filled page only, not all g_pages
 		u64 page_count = 0;
-
 		//switch (p.GetMode())
 		//{
 		//case PointerWrap::MODE_READ:
@@ -1538,9 +1542,17 @@ namespace vm
 		//
 		// TODO:
 		p.Do(g_locks);
+		for (int a = 0; a < g_locks.size(); a++)
+		{
+			p.Do(g_locks.at(a));
+		}
 		//other stuff
 		//p.Do(vm::block_map);
-		p.Do(vm::g_shmem);
+		p.Do(g_shmem);
+		for (int a = 0; a < 65536; a++)
+		{
+			p.Do(vm::g_shmem[a]);
+		}
 		//
 		// g_locations
 		//

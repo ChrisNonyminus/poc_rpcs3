@@ -155,13 +155,15 @@ namespace SaveState
 		
 		idm::select<rsx::thread>([&p](u32, rsx::thread& rsxthr) { rsxthr.DoState(p); });
 		p.DoMarker("rsx::thread", 0x0);
-		vm::DoState(p);
 		idm::select<AudioBackend>([&p](u32, AudioBackend& audiob) { audiob.DoState(p); });
 		p.DoMarker("AudioBackend", 0x5);
+		vm::DoState(p);
 		p.DoMarker("vm", 0x2);
 		
 		//get_current_cpu_thread()->DoState(p);
 		//p.DoMarker("cpu_thread", 0x3);
+		/*idm::select<cpu_thread>([&p](u32, cpu_thread& cpu) { cpu.DoState(p); });
+		p.DoMarker("cpu_thread", 0x8);*/
 		idm::select<ppu_thread>([&p](u32, ppu_thread& ppu) { ppu.DoState(p); });
 		p.DoMarker("ppu_thread", 0x4);
 		idm::select<spu_thread>([&p](u32, spu_thread& spu) { spu.DoState(p); });
@@ -233,7 +235,6 @@ namespace SaveState
 		}
 
 		fs::file f(filename, fs::rewrite);
-
 		if (!f)
 		{
 			sys_log.error("Could not save state");

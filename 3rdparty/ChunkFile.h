@@ -31,6 +31,9 @@
 #include <util/atomic.hpp>
 #include <util/logs.hpp>
 #include <cassert>
+#include <optional>
+template <typename T>
+constexpr bool IsTriviallyCopyable = std::is_trivially_copyable<std::remove_volatile_t<T>>::value;
 
 // Wrapper class
 class PointerWrap
@@ -117,25 +120,25 @@ public:
 	template <typename T>
 	void Do(std::vector<T>& x)
 	{
-		DoContainer(x);
+		DoContiguousContainer(x);
 	}
 
 	template <typename T>
 	void Do(std::list<T>& x)
 	{
-		DoContainer(x);
+		DoContiguousContainer(x);
 	}
 
 	template <typename T>
 	void Do(std::deque<T>& x)
 	{
-		DoContainer(x);
+		DoContiguousContainer(x);
 	}
 
 	template <typename T>
 	void Do(std::basic_string<T>& x)
 	{
-		DoContainer(x);
+		DoContiguousContainer(x);
 	}
 
 	template <typename T, typename U>
@@ -150,11 +153,39 @@ public:
 	{
 		DoArray(x.data(), (u32)x.size());
 	}
+	template <typename T>
+	void Do(std::optional<T>& x)
+	{
+		bool present = x.has_value();
+		Do(present);
+		
+		switch (mode)
+		{
+		case MODE_READ:
+			if (present)
+			{
+				x = std::make_optional<T>();
+				Do(x.value());
+			}
+			else
+			{
+				x = std::nullopt;
+			}
+			break;
 
+		case MODE_WRITE:
+		case MODE_MEASURE:
+		case MODE_VERIFY:
+			if (present)
+				Do(x.value());
+
+			break;
+		}
+	}
 	template <typename T>
 	void DoArray(T* x, u32 count)
 	{
-		static_assert(std::is_trivially_copyable<T>::value, "Only sane for trivially copyable types");
+		//static_assert(std::is_trivially_copyable<T>::value, "Only sane for trivially copyable types");
 		DoVoid(x, count * sizeof(T));
 	}
 
@@ -251,6 +282,17 @@ public:
 	}
 
 private:
+	template <typename T>
+	void DoContiguousContainer(T& container)
+	{
+		u32 size = static_cast<u32>(container.size());
+		Do(size);
+		container.resize(size);
+
+		if (size > 0)
+			DoArray(&container[0], size);
+	}
+
 	template <typename T>
 	void DoContainer(T& x)
 	{

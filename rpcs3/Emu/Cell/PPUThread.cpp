@@ -620,7 +620,8 @@ void ppu_thread::DoState(PointerWrap& p)
 	p.Do(id_base);
 	p.Do(id_step);
 	p.Do(id_count);
-	//p.Do(ppu_thread::id_invl_range);
+	p.Do(ppu_thread::id_invl_range.first);
+	p.Do(ppu_thread::id_invl_range.second);
 	//p.Do(ppu_thread::jm_mask);
 	p.Do(ppu_thread::joiner);
 	p.Do(ppu_thread::last_faddr);

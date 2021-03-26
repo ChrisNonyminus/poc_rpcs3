@@ -1169,6 +1169,6 @@ void cpu_thread::DoState(PointerWrap& p)
 	p.Do(state);
 	p.Do(id);
 	p.Do(block_hash);
-	p.Do(cpu_thread::g_suspend_counter);
-	p.Do(cpu_thread::g_tls_this_thread);
+	p.Do(g_suspend_counter);
+	p.Do(g_tls_this_thread);
 }
