@@ -145,7 +145,6 @@ namespace SaveState
 		p.Do(g_fixed_typemap);
 		p.DoMarker("stx::g_fixed_typemap", 0x7);*/ //rpcs3 won't let me deserialize fxo
 		//rsx::thread::DoState(p);
-
 		g_fxo->get<idm>().DoState(p);
 		p.DoMarker("idm", 0x1);
 		//g_fxo->get<rsx::thread>().DoState(p);
@@ -217,7 +216,7 @@ namespace SaveState
 		const u8* const buffer_data = &(*(save_args.buffer_vector))[0];
 		const size_t buffer_size    = (save_args.buffer_vector)->size();
 		std::string& filename       = save_args.filename;
-
+		bool fileexists             = false;
 		// For easy debugging
 		// Common::SetCurrentThreadName("SaveState thread");
 
@@ -229,12 +228,13 @@ namespace SaveState
 
 			if (!fs::rename(filename, "lastState.sav", true))
 				sys_log.error("Failed to move previous state to state undo backup");*/
+			fileexists = true;
 		}
 		else
 		{
 		}
 
-		fs::file f(filename, fs::rewrite);
+		fs::file f(filename, fileexists ? fs::rewrite : fs::create);
 		if (!f)
 		{
 			sys_log.error("Could not save state");

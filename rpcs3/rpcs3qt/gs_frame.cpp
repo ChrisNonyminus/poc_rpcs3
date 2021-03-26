@@ -220,13 +220,13 @@ void gs_frame::keyPressEvent(QKeyEvent *keyEvent)
 		break;
 	case Qt::Key_F7:
 	{
-		SaveState::SaveSavestate("E:\\test.sav");
+		SaveState::SaveSavestate("M:\\test.sav");
 		return;
 	}
 	break;
 	case Qt::Key_F8:
 	{
-		SaveState::LoadSavestate("E:\\test.sav");
+		SaveState::LoadSavestate("M:\\test.sav");
 		return;
 	}
 	break;

@@ -43,6 +43,7 @@
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
 #include "Emu/system_config.h"
+#include "SaveState.h"
 
 #include "Crypto/unpkg.h"
 #include "Crypto/unself.h"
@@ -369,7 +370,33 @@ void main_window::show_boot_error(game_boot_result status)
 	msg.setText(tr("Booting failed: %1 %2").arg(message).arg(link));
 	msg.exec();
 }
+void main_window::SaveStateAs()
+{
+	if (!Emu.IsRunning())
+		return;
+	const QString emu_path  = m_gui_settings->GetValue(gui::fs_emulator_dir_list).toString();
+	const QString file_path = QFileDialog::getSaveFileName(this, tr("Save Savestate as File"), emu_path, tr("All files (*.*)"), Q_NULLPTR, QFileDialog::DontResolveSymlinks);
 
+	if (file_path.isEmpty())
+	{
+		return;
+	}
+	SaveState::SaveSavestate(sstr(QFileInfo(file_path).absoluteFilePath()));
+}
+void main_window::LoadState()
+{
+	if (!Emu.IsRunning())
+		return;
+	const QString emu_path  = m_gui_settings->GetValue(gui::fs_emulator_dir_list).toString();
+	const QString file_path = QFileDialog::getOpenFileName(this, tr("Open Savestate"), emu_path, tr("All files (*.*)"), Q_NULLPTR, QFileDialog::DontResolveSymlinks);
+
+	if (file_path.isEmpty())
+	{
+		return;
+	}
+	
+	SaveState::LoadSavestate(sstr(QFileInfo(file_path).absoluteFilePath()));
+}
 void main_window::Boot(const std::string& path, const std::string& title_id, bool direct, bool add_only, bool force_global_config)
 {
 	if (!m_gui_settings->GetBootConfirmation(this, gui::ib_confirm_boot))
@@ -1891,6 +1918,8 @@ void main_window::CreateActions()
 
 void main_window::CreateConnects()
 {
+	connect(ui->actionSave_savestate, &QAction::triggered, this, &main_window::SaveStateAs);
+	connect(ui->actionLoad_savestate, &QAction::triggered, this, &main_window::LoadState);
 	connect(ui->bootElfAct, &QAction::triggered, this, &main_window::BootElf);
 	connect(ui->bootGameAct, &QAction::triggered, this, &main_window::BootGame);
 	connect(ui->actionopen_rsx_capture, &QAction::triggered, this, [this](){ BootRsxCapture(); });

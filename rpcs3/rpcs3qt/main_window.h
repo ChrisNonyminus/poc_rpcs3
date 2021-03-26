@@ -100,7 +100,8 @@ public Q_SLOTS:
 	void OnEmuResume();
 	void OnEmuPause();
 	void OnEmuReady();
-
+	void SaveStateAs();
+	void LoadState();
 	void RepaintGui();
 	void RetranslateUI(const QStringList& language_codes, const QString& language);
 

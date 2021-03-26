@@ -141,7 +141,7 @@
      <x>0</x>
      <y>0</y>
      <width>1058</width>
-     <height>30</height>
+     <height>21</height>
     </rect>
    </property>
    <property name="contextMenuPolicy">
@@ -210,6 +210,9 @@
     <addaction name="separator"/>
     <addaction name="sysSendOpenMenuAct"/>
     <addaction name="sysSendExitAct"/>
+    <addaction name="separator"/>
+    <addaction name="actionSave_savestate"/>
+    <addaction name="actionLoad_savestate"/>
    </widget>
    <widget class="QMenu" name="menuConfiguration">
     <property name="title">
@@ -1149,6 +1152,16 @@
    </property>
    <property name="text">
     <string>Show Custom Icons</string>
+   </property>
+  </action>
+  <action name="actionSave_savestate">
+   <property name="text">
+    <string>Save savestate...</string>
+   </property>
+  </action>
+  <action name="actionLoad_savestate">
+   <property name="text">
+    <string>Load savestate...</string>
    </property>
   </action>
  </widget>
