@@ -65,7 +65,7 @@ void fmt_class_string<CellGemStatus>::format(std::string& out, u64 arg)
 
 struct gem_config
 {
-	atomic_t<u32> state = 0;
+	atomic_t<u8> state = 0;
 
 	struct gem_color
 	{
@@ -102,6 +102,8 @@ struct gem_config
 		u64 calibration_start_us{0};                       // The start timestamp of the calibration in microseconds
 
 		static constexpr u64 calibration_time_us = 500000; // The calibration supposedly takes 0.5 seconds (500000 microseconds)
+
+		using enable_bitcopy = std::true_type;
 	};
 
 	CellGemAttribute attribute = {};
@@ -171,7 +173,43 @@ struct gem_config
 			controllers[gem_num].port = 7u - gem_num;
 		}
 	}
+
+	gem_config() = default;
+
+	void serialize_common(utils::serial& ar)
+	{
+		ar(state);
+
+		if (!state)
+		{
+			return;
+		}
+
+		if (ar.is_writing())
+		{
+			USING_SERIALIZATION_VERSION(cellGem);
+		}
+
+		ar(attribute, vc_attribute, status_flags, enable_pitch_correction, inertial_counter, controllers
+			, connected_controllers, update_started, camera_frame, memory_ptr, start_timestamp);
+	}
+
+	gem_config(utils::serial& ar)
+	{
+		serialize_common(ar);
+	}
+
+	void save(utils::serial& ar)
+	{
+		serialize_common(ar);
+	}
 };
+
+template <>
+void fxo_serialize<gem_config>(utils::serial* ar)
+{
+	fxo_serialize_body<gem_config>(ar);
+}
 
 /**
  * \brief Verifies that a Move controller id is valid

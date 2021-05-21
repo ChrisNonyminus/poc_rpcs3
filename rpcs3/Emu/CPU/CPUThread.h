@@ -19,6 +19,7 @@ enum class cpu_flag : u32
 	pause, // Thread suspended by suspend_all technique
 	suspend, // Thread suspended
 	ret, // Callback return requested
+	incomplete_syscall, // Thread must complete the syscall after deserialization
 	signal, // Thread received a signal (HLE)
 	memory, // Thread must unlock memory mutex
 
@@ -28,6 +29,8 @@ enum class cpu_flag : u32
 
 	__bitset_enum_max
 };
+
+constexpr auto cpu_incomplete_syscall = cpu_flag::exit + cpu_flag::incomplete_syscall;
 
 // Test stopped state
 constexpr bool is_stopped(bs_t<cpu_flag> state)
