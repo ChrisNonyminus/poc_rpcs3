@@ -1,4 +1,4 @@
-#include "main_window.h"
+﻿#include "main_window.h"
 #include "qt_utils.h"
 #include "vfs_dialog.h"
 #include "save_manager_dialog.h"
@@ -324,6 +324,7 @@ void main_window::OnPlayOrPause()
 
 		return;
 	}
+	case system_state::starting: break;
 	default: fmt::throw_exception("Unreachable");
 	}
 }
@@ -372,7 +373,7 @@ void main_window::show_boot_error(game_boot_result status)
 	msg.exec();
 }
 
-void main_window::Boot(const std::string& path, const std::string& title_id, bool direct, bool add_only, bool force_global_config)
+void main_window::Boot(const std::string& path, const std::string& title_id, bool direct, bool add_only, bool force_global_config, const std::string& savestate)
 {
 	if (!m_gui_settings->GetBootConfirmation(this, gui::ib_confirm_boot))
 	{
@@ -384,7 +385,7 @@ void main_window::Boot(const std::string& path, const std::string& title_id, boo
 	Emu.SetForceBoot(true);
 	Emu.Stop();
 
-	if (const auto error = Emu.BootGame(path, title_id, direct, add_only, force_global_config); error != game_boot_result::no_errors)
+	if (const auto error = Emu.BootGame(path, title_id, direct, add_only, force_global_config, savestate); error != game_boot_result::no_errors)
 	{
 		gui_log.error("Boot failed: reason: %s, path: %s", error, path);
 		show_boot_error(error);
@@ -438,6 +439,36 @@ void main_window::BootElf()
 
 	gui_log.notice("Booting from BootElf...");
 	Boot(path, "", true);
+}
+
+void main_window::BootSavestate()
+{
+	bool stopped = false;
+
+	if (Emu.IsRunning())
+	{
+		Emu.Pause();
+		stopped = true;
+	}
+
+	const QString file_path = QFileDialog::getOpenFileName(this, tr("Select Savestate To Boot"), qstr(fs::get_cache_dir() + "/savestates/"), tr(
+		"Savestate files (*.SAVESTAT);;"
+		"All files (*.*)"),
+		Q_NULLPTR, QFileDialog::DontResolveSymlinks);
+
+	if (file_path.isEmpty())
+	{
+		if (stopped)
+		{
+			Emu.Resume();
+		}
+		return;
+	}
+
+	const std::string path = sstr(QFileInfo(file_path).absoluteFilePath());
+
+	gui_log.notice("Booting from savestate...");
+	Boot("", "", true, false, false, path);
 }
 
 void main_window::BootGame()
@@ -1385,7 +1416,7 @@ void main_window::RepaintThumbnailIcons()
 	m_icon_thumb_stop = icon(":/Icons/stop.png");
 	m_icon_thumb_restart = icon(":/Icons/restart.png");
 
-	m_thumb_playPause->setIcon(Emu.IsRunning() ? m_icon_thumb_pause : m_icon_thumb_play);
+	m_thumb_playPause->setIcon(Emu.IsRunning() || Emu.IsStarting() ? m_icon_thumb_pause : m_icon_thumb_play);
 	m_thumb_stop->setIcon(m_icon_thumb_stop);
 	m_thumb_restart->setIcon(m_icon_thumb_restart);
 #endif
@@ -1919,6 +1950,8 @@ void main_window::CreateConnects()
 	{
 		g_user_asked_for_frame_capture = true;
 	});
+
+	connect(ui->bootSavestateAct, &QAction::triggered, this, &main_window::BootSavestate);
 
 	connect(ui->addGamesAct, &QAction::triggered, this, [this]()
 	{
@@ -2456,9 +2489,9 @@ void main_window::CreateDockWindows()
 		m_selected_game = game;
 	});
 
-	connect(m_game_list_frame, &game_list_frame::RequestBoot, this, [this](const game_info& game, bool force_global_config)
+	connect(m_game_list_frame, &game_list_frame::RequestBoot, this, [this](const game_info& game, bool force_global_config, const std::string& savestate)
 	{
-		Boot(game->info.path, game->info.serial, false, false, force_global_config);
+		Boot(game->info.path, game->info.serial, false, false, force_global_config, savestate);
 	});
 
 	connect(m_game_list_frame, &game_list_frame::NotifyEmuSettingsChange, this, &main_window::NotifyEmuSettingsChange);
