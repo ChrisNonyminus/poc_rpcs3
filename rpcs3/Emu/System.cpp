@@ -176,16 +176,16 @@ void init_fxo_for_exec(utils::serial* ar, bool full = false)
 
 	Emu.ConfigurePPUCache();
 
-	fxo_serialize<struct loaded_npdrm_keys>(ar);
+	fxo_serialize<struct lv2_memory_container>(ar); // Must be first!
 
-	fxo_serialize<struct lv2_memory_container>(ar);
+	fxo_serialize<struct loaded_npdrm_keys>(ar);
 	fxo_serialize_body<id_manager::id_map<named_thread<ppu_thread>>>(ar);
-	fxo_serialize_body<id_manager::id_map<lv2_obj>>(ar);
+	fxo_serialize_body<id_manager::id_map<lv2_obj>>(ar); // Dependancy on PPUs
 	fxo_serialize_body<id_manager::id_map<named_thread<spu_thread>>>(ar);
 
 	fxo_serialize<named_thread<class np_handler>>(ar);
-	fxo_serialize<id_manager::id_map<struct lv2_socket>>(ar);
-	fxo_serialize<id_manager::id_map<struct lv2_spu_group>>(ar);
+	fxo_serialize<id_manager::id_map<struct lv2_socket>>(ar); // Dependancy on RPCN
+	fxo_serialize<id_manager::id_map<struct lv2_spu_group>>(ar); // Dependancy on SPUs
 	fxo_serialize<named_thread<class cell_audio_thread>>(ar);
 	fxo_serialize<id_manager::id_map<struct sys_vm_t>>(ar);
 	fxo_serialize<struct pad_info>(ar);
