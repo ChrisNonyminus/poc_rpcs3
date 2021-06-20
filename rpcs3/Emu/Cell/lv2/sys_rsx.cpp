@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "sys_rsx.h"
 
 #include "Emu/Cell/PPUModule.h"
@@ -7,6 +7,7 @@
 #include "Emu/Memory/vm_locking.h"
 #include "Emu/RSX/RSXThread.h"
 #include "sys_event.h"
+#include <windows.h>
 
 LOG_CHANNEL(sys_rsx);
 
@@ -749,6 +750,11 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 
 	case 0xFED: // hack: vblank command
 	{
+		HINSTANCE vanguard = LoadLibraryA("RPCS3Vanguard-Hook.dll"); //RTC_Hijack: include the hook dll as an import
+		typedef void (*CPUSTEP)();
+		CPUSTEP CPU_STEP = (CPUSTEP)GetProcAddress(vanguard, "CPU_STEP");
+		CPU_STEP();
+
 		// NOTE: There currently seem to only be 2 active heads on PS3
 		ensure(a3 < 2);
 

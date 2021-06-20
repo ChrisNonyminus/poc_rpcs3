@@ -130,6 +130,9 @@
     <Filter Include="Gui\custom items">
       <UniqueIdentifier>{949cff6d-9cc5-4a8a-a453-a5144da8ecf4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Vanguard">
+      <UniqueIdentifier>{34704967-4c4f-4638-8c75-7f2f335d2acd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -747,6 +750,9 @@
     <ClCompile Include="rpcs3qt\game_list.cpp">
       <Filter>Gui\game list</Filter>
     </ClCompile>
+    <ClCompile Include="Vanguard\ManagedWrapper.cpp">
+      <Filter>Vanguard</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Input\ds4_pad_handler.h">
@@ -877,6 +883,9 @@
     </ClInclude>
     <ClInclude Include="rpcs3qt\movie_item.h">
       <Filter>Gui\custom items</Filter>
+    </ClInclude>
+    <ClInclude Include="Vanguard\ManagedWrapper.h">
+      <Filter>Vanguard</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
