@@ -355,6 +355,12 @@ void main_window::show_boot_error(game_boot_result status)
 	case game_boot_result::unsupported_disc_type:
 		message = tr("This disc type is not supported yet.");
 		break;
+	case game_boot_result::savestate_corrupted:
+		message = tr("Savestate data is corrupted or it's not an RPCS3 savestate.");
+		break;
+	case game_boot_result::savestate_version_unsupported:
+		message = tr("Savestate versioning data differes from your RPCS3 build.");
+		break;
 	case game_boot_result::firmware_missing: // Handled elsewhere
 	case game_boot_result::no_errors:
 		return;

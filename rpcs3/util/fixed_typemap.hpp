@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // Backported from auto_typemap.hpp as a more simple alternative
 
@@ -116,7 +116,6 @@ namespace stx
 			template <typename T>
 			static void call_save(void* ptr, utils::serial& ar) noexcept
 			{
-				print_debug(typeid(T).name());
 				std::launder(static_cast<T*>(ptr))->save(stx::exact_t<utils::serial&>(ar));
 			}
 

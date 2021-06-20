@@ -149,13 +149,18 @@ struct sce_np_trophy_manager
 	sce_np_trophy_manager() = default;
 
 	sce_np_trophy_manager(utils::serial& ar)
-		: is_initialized(ar.operator bool())
+		: is_initialized(ar)
 	{
 	}
 
 	void save(utils::serial& ar)
 	{
-		ar(is_initialized.operator bool());
+		ar(is_initialized);
+
+		if (is_initialized)
+		{
+			USING_SERIALIZATION_VERSION(sceNpTrophy);
+		}
 	}
 };
 

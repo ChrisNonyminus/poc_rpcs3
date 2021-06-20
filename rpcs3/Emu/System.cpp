@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "VFS.h"
 #include "Utilities/bin_patch.h"
 #include "Emu/Memory/vm.h"
@@ -61,7 +61,7 @@ struct serial_ver_t
 	std::set<u32> compatible_versions;
 };
 
-static std::array<serial_ver_t, 14> s_serial_versions;
+static std::array<serial_ver_t, 18> s_serial_versions;
 
 #define SERIALIZATION_VER(name, identifier, ver) \
 \
@@ -77,7 +77,7 @@ static std::array<serial_ver_t, 14> s_serial_versions;
 		return s_serial_versions[identifier].current_version;\
 	}
 
-SERIALIZATION_VER(global_version, 0, {1}) // For stuff not listed here
+SERIALIZATION_VER(global_version, 0, {2}) // For stuff not listed here
 SERIALIZATION_VER(ppu, 1, {1})
 SERIALIZATION_VER(spu, 2, {1})
 SERIALIZATION_VER(lv2_sync, 3, {1})
@@ -91,6 +91,10 @@ SERIALIZATION_VER(rsx, 10, {1})
 SERIALIZATION_VER(sceNp, 11, {1})
 SERIALIZATION_VER(cellVdec, 12, {1})
 SERIALIZATION_VER(cellAudio, 13, {1})
+SERIALIZATION_VER(cellCamera, 14, {1})
+SERIALIZATION_VER(cellGem, 15, {1})
+SERIALIZATION_VER(sceNpTrophy, 16, {1})
+SERIALIZATION_VER(cellMusic, 17, {1})
 
 #undef SERIALIZATION_VER
 
@@ -140,6 +144,8 @@ void fmt_class_string<game_boot_result>::format(std::string& out, u64 arg)
 		case game_boot_result::file_creation_error: return "Could not create important files";
 		case game_boot_result::firmware_missing: return "Firmware is missing";
 		case game_boot_result::unsupported_disc_type: return "This disc type is not supported yet";
+		case game_boot_result::savestate_corrupted: return "Savestate data is corrupted or it's not an RPCS3 savestate";
+		case game_boot_result::savestate_version_unsupported: return "Savestate versioning data differes from your RPCS3 build";
 		}
 		return unknown;
 	});
@@ -159,8 +165,11 @@ struct sys_vm_t;
 struct pad_info;
 struct sce_np_trophy_manager;
 struct sysutil_cb_manager;
+struct gem_config;
+struct music_state;
 class cell_audio_thread;
 class usb_handler_thread;
+class camera_context;
 
 // This function ensures constant initialization order between different compilers and builds 
 void init_fxo_for_exec(utils::serial* ar, bool full = false)
@@ -193,6 +202,9 @@ void init_fxo_for_exec(utils::serial* ar, bool full = false)
 	fxo_serialize<struct sce_np_trophy_manager>(ar);
 	fxo_serialize<struct sysutil_cb_manager>(ar);
 	fxo_serialize<named_thread<usb_handler_thread>>(ar);
+	fxo_serialize<gem_config>(ar);
+	fxo_serialize<named_thread<camera_context>>(ar);
+	fxo_serialize<music_state>(ar);
 
 	g_fxo->init(false, ar);
 	Emu.GetCallbacks().init_gs_render(ar);
