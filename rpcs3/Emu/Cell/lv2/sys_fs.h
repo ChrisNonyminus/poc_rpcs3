@@ -160,23 +160,25 @@ struct lv2_fs_object
 	static const u32 id_step = 1;
 	static const u32 id_count = 255 - id_base;
 
-	// Mount Point
-	const std::add_pointer_t<lv2_fs_mount_point> mp;
-
 	// File Name (max 1055)
 	const std::array<char, 0x420> name;
 
+	// Mount Point
+	const std::add_pointer_t<lv2_fs_mount_point> mp;
+
+protected:
 	lv2_fs_object(lv2_fs_mount_point* mp, std::string_view filename)
-		: mp(mp)
-		, name(get_name(filename))
+		: name(get_name(filename))
+		, mp(mp)
 	{
 	}
 
+	lv2_fs_object(utils::serial& ar);
+
+public:
 	lv2_fs_object(const lv2_fs_object&) = delete;
 
 	lv2_fs_object& operator=(const lv2_fs_object&) = delete;
-
-	virtual ~lv2_fs_object() = default;
 
 	static lv2_fs_mount_point* get_mp(std::string_view filename);
 
@@ -193,8 +195,6 @@ struct lv2_fs_object
 		name[filename.size()] = 0;
 		return name;
 	}
-
-	virtual std::string to_string() const { return {}; }
 };
 
 struct lv2_file final : lv2_fs_object
@@ -236,6 +236,9 @@ struct lv2_file final : lv2_fs_object
 	{
 	}
 
+	lv2_file(utils::serial& ar);
+	void save(utils::serial& ar);
+
 	struct open_raw_result_t
 	{
 		CellError error;
@@ -276,19 +279,6 @@ struct lv2_file final : lv2_fs_object
 
 	// Make file view from lv2_file object (for MSELF support)
 	static fs::file make_view(const std::shared_ptr<lv2_file>& _file, u64 offset);
-
-	virtual std::string to_string() const override
-	{
-		std::string_view type_s;
-		switch (type)
-		{
-		case lv2_file_type::regular: type_s = "Regular file"; break;
-		case lv2_file_type::sdata: type_s = "SDATA"; break;
-		case lv2_file_type::edata: type_s = "EDATA"; break;
-		}
-
-		return fmt::format(u8"%s, “%s”, Mode: 0x%x, Flags: 0x%x", type_s, name.data(), mode, flags);
-	}
 };
 
 struct lv2_dir final : lv2_fs_object
@@ -304,6 +294,9 @@ struct lv2_dir final : lv2_fs_object
 	{
 	}
 
+	lv2_dir(utils::serial& ar);
+	void save(utils::serial& ar);
+
 	// Read next
 	const fs::dir_entry* dir_read()
 	{
@@ -313,11 +306,6 @@ struct lv2_dir final : lv2_fs_object
 		}
 
 		return nullptr;
-	}
-
-	virtual std::string to_string() const override
-	{
-		return fmt::format(u8"Directory, “%s”, Entries: %u/%u", name.data(), std::min<u64>(pos, entries.size()), entries.size());
 	}
 };
 

@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "sys_sync.h"
 #include "sys_fs.h"
 
@@ -22,6 +22,55 @@ lv2_fs_mount_point g_mp_sys_host_root{"", 512, 512, lv2_mp_flag::strict_get_bloc
 lv2_fs_mount_point g_mp_sys_dev_flash{"", 512, 8192, lv2_mp_flag::read_only + lv2_mp_flag::no_uid_gid};
 lv2_fs_mount_point g_mp_sys_dev_flash2{ "", 512, 8192, lv2_mp_flag::no_uid_gid }; // TODO confirm
 lv2_fs_mount_point g_mp_sys_dev_flash3{ "", 512, 8192, lv2_mp_flag::read_only + lv2_mp_flag::no_uid_gid }; // TODO confirm
+
+template<>
+void fmt_class_string<lv2_file>::format(std::string& out, u64 arg)
+{
+	const auto& file = get_object(arg);
+
+	std::string_view type_s;
+	switch (file.type)
+	{
+	case lv2_file_type::regular: type_s = "Regular file"; break;
+	case lv2_file_type::sdata: type_s = "SDATA"; break;
+	case lv2_file_type::edata: type_s = "EDATA"; break;
+	}
+
+	auto get_size = [](u64 size) -> std::string
+	{
+		if (size == umax)
+		{
+			return "N/A";
+		}
+
+		std::string size_str = fmt::format("0x%05x ", size);
+		switch (std::bit_width(size) / 10 * 10)
+		{
+		case 64: size_str = "0"s; break;
+		case 0: fmt::append(size_str, "(%u)", size); break;
+		case 10: fmt::append(size_str, "(%gKB)", size / 1024.); break;
+		case 20: fmt::append(size_str, "(%gMB)", size / (1024. * 1024)); break;
+
+		default:
+		case 30: fmt::append(size_str, "(%gGB)", size / (1024. * 1024 * 1024)); break;
+		}
+	
+		return size_str;
+	};
+
+	const usz pos = file.file ? file.file.pos() : umax;
+	const usz size = file.file ? file.file.size() : umax;
+
+	fmt::append(out, u8"%s, “%s”, Mode: 0x%x, Flags: 0x%x, Pos: %s, Size: %s", type_s, file.name.data(), file.mode, file.flags, get_size(pos), get_size(size));
+}
+
+template<>
+void fmt_class_string<lv2_dir>::format(std::string& out, u64 arg)
+{
+	const auto& dir = get_object(arg);
+
+	fmt::append(out, u8"Directory, “%s”, Entries: %u/%u", dir.name.data(), std::min<u64>(dir.pos, dir.entries.size()), dir.entries.size());
+}
 
 bool verify_mself(const fs::file& mself_file)
 {
@@ -135,6 +184,12 @@ lv2_fs_mount_point* lv2_fs_object::get_mp(std::string_view filename)
 	return &g_mp_sys_dev_root;
 }
 
+lv2_fs_object::lv2_fs_object(utils::serial& ar)
+	: name(ar)
+	, mp(get_mp(name.data()))
+{
+}
+
 u64 lv2_file::op_read(const fs::file& file, vm::ptr<void> buf, u64 size)
 {
 	// Copy data from intermediate buffer (avoid passing vm pointer to a native API)
@@ -180,6 +235,99 @@ u64 lv2_file::op_write(const fs::file& file, vm::cptr<void> buf, u64 size)
 	}
 
 	return result;
+}
+
+template <>
+void fxo_serialize<loaded_npdrm_keys>(utils::serial* ar)
+{
+	fxo_serialize_body<loaded_npdrm_keys>(ar);
+	fxo_serialize_body<id_manager::id_map<lv2_fs_object>>(ar);
+}
+
+lv2_file::lv2_file(utils::serial& ar)
+	: lv2_fs_object(ar)
+	, mode(ar)
+	, flags(ar)
+	, type(ar)
+{
+	ar(lock);
+
+	be_t<u64> arg = 0;
+	u64 size = 0;
+
+	switch (type)
+	{
+	case lv2_file_type::regular: break;
+	case lv2_file_type::sdata: arg = 0x18000000010, size = 8; break; // TODO: Fix
+	case lv2_file_type::edata: arg = 0x2, size = 8; break;
+	}
+
+	open_result_t res = lv2_file::open(name.data(), flags & CELL_FS_O_ACCMODE, mode, size ? &arg : nullptr, size);
+	file = std::move(res.file);
+	real_path = std::move(res.real_path);
+
+	g_fxo->get<loaded_npdrm_keys>().npdrm_fds.raw() += type != lv2_file_type::regular;
+
+	if (!file)
+	{
+		sys_fs.error("Failed to load %s for savestates", name.data());
+		ar.pos += sizeof(u64);
+		ensure(!!g_cfg.savestate.state_inspection_mode);
+		return;
+	}
+
+	file.seek(ar);
+}
+
+void lv2_file::save(utils::serial& ar)
+{
+	USING_SERIALIZATION_VERSION(lv2_fs);
+	ar(name, mode, flags, type, lock, file.pos());
+}
+
+lv2_dir::lv2_dir(utils::serial& ar)
+	: lv2_fs_object(ar)
+	, entries([&]
+	{
+		std::vector<fs::dir_entry> entries;
+
+		u64 size = 0;
+		ar.deserialize_vle(size);
+		entries.resize(size);
+
+		for (auto& entry : entries)
+		{
+			ar(entry.name, static_cast<fs::stat_t&>(entry));
+		}
+
+		return entries;
+	}())
+	, pos(ar)
+{
+}
+
+void lv2_dir::save(utils::serial& ar)
+{
+	USING_SERIALIZATION_VERSION(lv2_fs);
+
+	ar(name);
+
+	ar.serialize_vle(entries.size());
+
+	for (auto& entry : entries)
+	{
+		ar(entry.name, static_cast<const fs::stat_t&>(entry));
+	}
+}
+
+loaded_npdrm_keys::loaded_npdrm_keys(utils::serial& ar)
+{
+	ar(devKlic, rifKey);
+}
+
+void loaded_npdrm_keys::save(utils::serial& ar)
+{
+	ar(devKlic, rifKey);
 }
 
 struct lv2_file::file_view : fs::file_base
@@ -1855,11 +2003,6 @@ error_code sys_fs_fget_block_size(ppu_thread& ppu, u32 fd, vm::ptr<u64> sector_s
 		return CELL_EBADF;
 	}
 
-	if (ppu.is_stopped())
-	{
-		return {};
-	}
-
 	// TODO
 	*sector_size = file->mp->sector_size;
 	*block_size = file->mp->block_size;
@@ -1907,11 +2050,6 @@ error_code sys_fs_get_block_size(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<u
 		}
 
 		return {CELL_EIO, path}; // ???
-	}
-
-	if (ppu.is_stopped())
-	{
-		return {};
 	}
 
 	// TODO
