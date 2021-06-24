@@ -173,7 +173,7 @@ kernel_explorer::kernel_explorer(QWidget* parent)
 	setWindowTitle(tr("Kernel Explorer"));
 	setObjectName("kernel_explorer");
 	setAttribute(Qt::WA_DeleteOnClose);
-	setMinimumSize(QSize(800, 650));
+	setMinimumSize(QSize(700, 450));
 
 	QVBoxLayout* vbox_panel = new QVBoxLayout();
 	QHBoxLayout* hbox_buttons = new QHBoxLayout();
@@ -182,7 +182,7 @@ kernel_explorer::kernel_explorer(QWidget* parent)
 	hbox_buttons->addStretch();
 
 	m_tree = new QTreeWidget(this);
-	m_tree->setBaseSize(QSize(700, 500));
+	m_tree->setBaseSize(QSize(600, 300));
 	m_tree->setWindowTitle(tr("Kernel"));
 	m_tree->header()->close();
 
@@ -849,7 +849,7 @@ void kernel_explorer::Update()
 					node->setText(0, node->text(0) + qstr(fmt::format(" (%zu)", count)));
 
 					// Expand if necessary
-					node->setExpanded(true || node->data(0, kernel_item_role::expanded_role).toBool());
+					node->setExpanded(node->data(0, kernel_item_role::expanded_role).toBool());
 				}
 
 				// Hide node if it has no children
