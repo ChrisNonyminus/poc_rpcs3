@@ -390,6 +390,12 @@ namespace stx
 			}
 		}
 
+		template <typename T, typename As = T>
+		static std::string_view get_name() noexcept
+		{
+			return stx::typedata<typeinfo, std::decay_t<T>, std::decay_t<As>>().name;
+		}
+
 		// Obtain object pointer if initialized
 		template <typename T>
 		T* try_get() const noexcept

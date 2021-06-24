@@ -65,19 +65,19 @@ static std::array<serial_ver_t, 18> s_serial_versions;
 
 #define SERIALIZATION_VER(name, identifier, ver) \
 \
-	const bool s_##name##_serialization_fill = []() { s_serial_versions[identifier].compatible_versions = ver; return true; }();\
+	const bool s_##name##_serialization_fill = []() { ::s_serial_versions[identifier].compatible_versions = ver; return true; }();\
 \
 	extern void using_##name##_serialization()\
 	{\
-		s_serial_versions[identifier].used = true;\
+		::s_serial_versions[identifier].used = true;\
 	}\
 \
 	extern u32 get_##name##_serialization_version()\
 	{\
-		return s_serial_versions[identifier].current_version;\
+		return ::s_serial_versions[identifier].current_version;\
 	}
 
-SERIALIZATION_VER(global_version, 0, {2}) // For stuff not listed here
+SERIALIZATION_VER(global_version, 0, {3}) // For stuff not listed here
 SERIALIZATION_VER(ppu, 1, {1})
 SERIALIZATION_VER(spu, 2, {1})
 SERIALIZATION_VER(lv2_sync, 3, {1})
@@ -87,7 +87,17 @@ SERIALIZATION_VER(lv2_fs, 6, {1})
 SERIALIZATION_VER(lv2_prx_overlay, 7, {1})
 SERIALIZATION_VER(lv2_memory, 8, {1})
 SERIALIZATION_VER(lv2_config, 9, {1})
-SERIALIZATION_VER(rsx, 10, {1})
+
+namespace rsx
+{
+	SERIALIZATION_VER(rsx, 10, {2})
+}
+
+#ifdef _MSC_VER
+// Compiler bug, lambda function body does seem to inherit used namespace atleast for function decleration 
+SERIALIZATION_VER(rsx, 10, {2})
+#endif
+
 SERIALIZATION_VER(sceNp, 11, {1})
 SERIALIZATION_VER(cellVdec, 12, {1})
 SERIALIZATION_VER(cellAudio, 13, {1})
@@ -115,9 +125,12 @@ fs::file g_tty;
 atomic_t<s64> g_tty_size{0};
 std::array<std::deque<std::string>, 16> g_tty_input;
 std::mutex g_tty_mutex;
+thread_local std::string_view g_tls_serialize_name;
 
 u64 g_timebased_offs = 0;
 u64 g_systemtime_offs = 0;
+
+extern thread_local std::string(*g_tls_log_prefix)();
 
 // Report error and call std::abort(), defined in main.cpp
 [[noreturn]] void report_fatal_error(std::string_view);
@@ -1315,6 +1328,14 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			elf_path = vfs::get(argv[0]);
 		}
 
+		if (ar)
+		{
+			g_tls_log_prefix = []()
+			{
+				return fmt::format("Emu State Load Thread: '%s'", g_tls_serialize_name);
+			};
+		}
+
 		fs::file elf_file(elf_path);
 
 		if (!elf_file)
@@ -1627,6 +1648,14 @@ void Emulator::FixGuestTime()
 
 		g_cfg.savestate.state_inspection_mode.set(m_state_inspection_savestate);
 		ar.reset();
+
+		CallAfter([this]
+		{
+			g_tls_log_prefix = []()
+			{
+				return std::string();
+			};
+		});
 	}
 }
 void Emulator::FinalizeRunRequest()
@@ -1766,6 +1795,11 @@ void Emulator::Resume()
 
 void Emulator::Stop(bool savestate, bool restart)
 {
+	g_tls_log_prefix = []()
+	{
+		return std::string();
+	};
+
 	if (m_state.exchange(system_state::stopped) == system_state::stopped)
 	{
 		if (restart)
@@ -1850,6 +1884,11 @@ void Emulator::Stop(bool savestate, bool restart)
 		// Savestate thread
 		named_thread emu_state_cap_thread("Emu State Capture Thread", [&]()
 		{
+			g_tls_log_prefix = []()
+			{
+				return fmt::format("Emu State Capture Thread: '%s'", g_tls_serialize_name);
+			};
+
 			auto& ar = *this->ar;
 
 			for (serial_ver_t& ver : s_serial_versions)

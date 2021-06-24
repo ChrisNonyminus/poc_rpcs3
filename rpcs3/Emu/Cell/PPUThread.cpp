@@ -1202,7 +1202,7 @@ ppu_thread::ppu_thread(utils::serial& ar)
 	, stack_size(ar)
 	, stack_addr(ar)
 	, joiner(ar.operator ppu_join_status())
-	, entry_func(std::bit_cast<ppu_func_opd_t>(ar.operator u64()))
+	, entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar))
 {
 	struct init_pushed
 	{

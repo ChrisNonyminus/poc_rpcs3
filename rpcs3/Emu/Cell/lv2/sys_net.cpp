@@ -1281,7 +1281,7 @@ lv2_socket::lv2_socket(utils::serial& ar)
 #else
 {
 	// Try to match structure between different platforms
-	ar.operator u32(), ar.operator u32();
+	ar.pos + 8;
 #endif
 
 	socket = new_lv2_socket(family, type, protocol);

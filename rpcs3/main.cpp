@@ -65,6 +65,7 @@ static atomic_t<bool> s_no_gui = false;
 static atomic_t<char*> s_argv0;
 
 extern thread_local std::string(*g_tls_log_prefix)();
+extern thread_local std::string_view g_tls_serialize_name;
 
 #ifndef _WIN32
 extern char **environ;
@@ -85,6 +86,17 @@ LOG_CHANNEL(q_debug, "QDEBUG");
 
 		// Always print thread id
 		fmt::append(buf, "\nThread id = %s.", std::this_thread::get_id());
+	}
+
+	if (!g_tls_serialize_name.empty())
+	{
+		// Copy only when needed
+		if (!buf.empty())
+		{
+			buf = std::string(_text);
+		}
+
+		fmt::append(buf, "\nSerialized Object: %s", g_tls_serialize_name);
 	}
 
 	const std::string_view text = buf.empty() ? _text : buf;

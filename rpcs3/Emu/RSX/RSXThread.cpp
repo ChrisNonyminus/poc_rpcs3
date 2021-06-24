@@ -42,7 +42,7 @@ extern thread_local std::string(*g_tls_log_prefix)();
 template <>
 bool serialize<rsx::rsx_state>(utils::serial& ar, rsx::rsx_state& o)
 {
-	return ar(o.transform_program, /*o.transform_constants,*/ o.registers);
+	return ar(o.transform_program, o.transform_constants, o.registers);
 }
 
 template <>
@@ -2892,7 +2892,13 @@ namespace rsx
 		if (!m_invalidated_memory_range.valid())
 			return;
 
-		on_invalidate_memory_range(m_invalidated_memory_range, !is_stopped() ? rsx::invalidation_cause::unmap : rsx::invalidation_cause::write);
+		if (is_stopped())
+		{
+			on_invalidate_memory_range(m_invalidated_memory_range, rsx::invalidation_cause::read);
+			on_invalidate_memory_range(m_invalidated_memory_range, rsx::invalidation_cause::write);
+		}
+
+		on_invalidate_memory_range(m_invalidated_memory_range, rsx::invalidation_cause::unmap);
 		m_invalidated_memory_range.invalidate();
 	}
 

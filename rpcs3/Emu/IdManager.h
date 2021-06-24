@@ -15,11 +15,14 @@ extern stx::manual_typemap<void, 0x20'00000, 128> g_fixed_typemap;
 
 constexpr auto* g_fxo = &g_fixed_typemap;
 
+extern thread_local std::string_view g_tls_serialize_name;
+
 template <typename T, typename U = T>
 inline U* fxo_serialize_body(utils::serial* ar)
 {
 	if (ar)
 	{
+		g_tls_serialize_name = g_fxo->get_name<T, U>();
 		return g_fxo->init<T, U>(stx::exact_t<utils::serial&>(*ar));
 	}
 

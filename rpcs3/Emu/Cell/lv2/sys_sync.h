@@ -337,7 +337,8 @@ public:
 			}, true).second;
 		}
 
-		ensure(CELL_OK == make->on_id_create());
+		// Ensure no error
+		ensure(!make->on_id_create());
 		return make;
 	}
 
