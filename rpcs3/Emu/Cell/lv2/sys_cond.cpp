@@ -35,6 +35,37 @@ lv2_cond::lv2_cond(utils::serial& ar)
 {
 }
 
+CellError lv2_cond::on_id_create()
+{
+	static auto do_it = [](lv2_cond* _this) -> CellError
+	{
+		if (lv2_obj::check(_this->mutex))
+		{
+			_this->mutex->cond_count++;
+			_this->exists++;
+			return {};
+		}
+
+		// Mutex has been destroyed, cannot create conditional variable
+		return CELL_ESRCH;
+	};
+
+	if (mutex)
+	{
+		return do_it(this);
+	}
+
+	ensure(!!Emu.ar);
+
+	Emu.DeferDeserialization([this]()
+	{
+		// Defer function
+		ensure(CellError{} == do_it(this));
+	});
+
+	return {};
+}
+
 std::shared_ptr<void> lv2_cond::load(utils::serial& ar)
 {
 	auto cond = std::make_shared<lv2_cond>(ar);

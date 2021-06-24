@@ -42,18 +42,7 @@ struct lv2_cond final : lv2_obj
 	static std::shared_ptr<void> load(utils::serial& ar);
 	void save(utils::serial& ar);
 
-	CellError on_id_create()
-	{
-		if (mutex->exists)
-		{
-			mutex->cond_count++;
-			exists++;
-			return {};
-		}
-
-		// Mutex has been destroyed, cannot create conditional variable
-		return CELL_ESRCH;
-	}
+	CellError on_id_create();
 };
 
 class ppu_thread;
