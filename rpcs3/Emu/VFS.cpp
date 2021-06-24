@@ -62,7 +62,7 @@ bool vfs::mount(std::string_view vpath, std::string_view path)
 		if (pos == umax)
 		{
 			// Mounting completed
-			list.back()->path = Emu.GetCallbacks().resolve_path(path);
+			list.back()->path = path;
 			return true;
 		}
 
@@ -286,57 +286,6 @@ using char2 = char8_t;
 #else
 using char2 = char;
 #endif
-
-std::string vfs::retrieve(std::string_view path, const vfs_directory* node)
-{
-	auto& table = g_fxo->get<vfs_manager>();
-
-	if (!node)
-	{
-		if (path.starts_with("."))
-		{
-			return {};
-		}
-
-		const std::string rpath = Emu.GetCallbacks().resolve_path(path);
-
-		if (rpath.empty())
-		{
-			return {};
-		}
-
-		reader_lock lock(table.mutex);
-
-		return vfs::retrieve(rpath, &table.root);
-	}
-
-
-	for (const vfs_directory& dir : node->dirs)
-	{
-		if (std::string res = vfs::retrieve(path, &dir); !res.empty())
-		{
-			return res;
-		}
-	}
-
-	if (path.starts_with(node->path))
-	{
-		auto unescape_path = [](std::string_view path)
-		{
-			// Unescape from host FS
-			std::vector<std::string> escaped = fmt::split(path, {std::string_view{&fs::delim[0], 1}, std::string_view{&fs::delim[1], 1}});
-			std::vector<std::string> result;
-			for (auto& sv : escaped)
-				result.emplace_back(vfs::unescape(sv));
-
-			return fmt::merge(result, "/");
-		};
-
-		return node->path + unescape_path(path.substr(node->path.size()));
-	}
-
-	return {};
-}
 
 std::string vfs::escape(std::string_view name, bool escape_slash)
 {

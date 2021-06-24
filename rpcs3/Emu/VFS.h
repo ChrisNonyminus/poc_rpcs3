@@ -5,7 +5,6 @@
 #include <string_view>
 
 struct lv2_fs_mount_point;
-struct vfs_directory;
 
 namespace vfs
 {
@@ -14,9 +13,6 @@ namespace vfs
 
 	// Convert VFS path to fs path, optionally listing directories mounted in it
 	std::string get(std::string_view vpath, std::vector<std::string>* out_dir = nullptr, std::string* out_path = nullptr);
-
-	// Convert fs path to VFS path
-	std::string retrieve(std::string_view path, const vfs_directory* node = nullptr);
 
 	// Escape VFS name by replacing non-portable characters with surrogates
 	std::string escape(std::string_view name, bool escape_slash = false);
