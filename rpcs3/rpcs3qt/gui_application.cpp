@@ -1,4 +1,4 @@
-﻿#include "gui_application.h"
+#include "gui_application.h"
 
 #include "qt_utils.h"
 #include "welcome_dialog.h"
@@ -317,24 +317,24 @@ void gui_application::InitializeCallbacks()
 		RequestCallAfter(std::move(func));
 	};
 
-	callbacks.init_gs_render = [](utils::serial* ar)
+	callbacks.init_gs_render = []()
 	{
 		switch (g_cfg.video.renderer.get())
 		{
 		case video_renderer::null:
 		{
-			g_fxo->init<rsx::thread, named_thread<NullGSRender>>(ar);
+			g_fxo->init<rsx::thread, named_thread<NullGSRender>>();
 			break;
 		}
 		case video_renderer::opengl:
 		{
-			g_fxo->init<rsx::thread, named_thread<GLGSRender>>(ar);
+			g_fxo->init<rsx::thread, named_thread<GLGSRender>>();
 			break;
 		}
 #if defined(_WIN32) || defined(HAVE_VULKAN)
 		case video_renderer::vulkan:
 		{
-			g_fxo->init<rsx::thread, named_thread<VKGSRender>>(ar);
+			g_fxo->init<rsx::thread, named_thread<VKGSRender>>();
 			break;
 		}
 #endif

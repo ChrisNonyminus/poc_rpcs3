@@ -6,7 +6,6 @@
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/timers.hpp"
-#include "Emu/System.h"
 #include "sys_event.h"
 #include "sys_process.h"
 
@@ -24,24 +23,6 @@ struct lv2_timer_thread
 	static constexpr auto thread_name = "Timer Thread"sv;
 };
 
-lv2_timer::lv2_timer(utils::serial& ar)
-	: lv2_obj{1}
-	, state(ar)
-	, port(lv2_event_queue::load_ptr(ar, port))
-	, source(ar)
-	, data1(ar)
-	, data2(ar)
-	, expire(ar)
-	, period(ar)
-{
-}
-
-void lv2_timer::save(utils::serial& ar)
-{
-	USING_SERIALIZATION_VERSION(lv2_sync);
-	ar(state), lv2_event_queue::save_ptr(ar, port.get()), ar(source, data1, data2, expire, period);
-}
-
 u64 lv2_timer::check()
 {
 	while (thread_ctrl::state() != thread_state::aborting)
@@ -53,7 +34,6 @@ u64 lv2_timer::check()
 			const u64 _now = get_guest_system_time();
 			u64 next = expire;
 
-			// If aborting, perform the last accurate check for event
 			if (_now >= next)
 			{
 				std::lock_guard lock(mutex);
@@ -93,19 +73,7 @@ u64 lv2_timer::check()
 
 void lv2_timer_thread::operator()()
 {
-	{
-		decltype(timers) vec;
-
-		idm::select<lv2_obj, lv2_timer>([&vec](u32 id, lv2_timer&)
-		{
-			vec.emplace_back(idm::get_unlocked<lv2_obj, lv2_timer>(id));
-		});
-
-		std::lock_guard lock(mutex);
-		timers = std::move(vec);
-	}
-
-	u64 sleep_time = 0;
+	u64 sleep_time = umax;
 
 	while (thread_ctrl::state() != thread_state::aborting)
 	{
@@ -118,12 +86,6 @@ void lv2_timer_thread::operator()()
 		thread_ctrl::wait_for(sleep_time);
 
 		sleep_time = umax;
-
-		if (Emu.IsPaused())
-		{
-			sleep_time = 10000;
-			continue;
-		}
 
 		reader_lock lock(mutex);
 
@@ -153,7 +115,6 @@ error_code sys_timer_create(ppu_thread& ppu, vm::ptr<u32> timer_id)
 		auto& thread = g_fxo->get<named_thread<lv2_timer_thread>>();
 		{
 			std::lock_guard lock(thread.mutex);
-			lv2_obj::unqueue(thread.timers, ptr);
 			thread.timers.emplace_back(std::move(ptr));
 		}
 
@@ -398,10 +359,7 @@ error_code sys_timer_usleep(ppu_thread& ppu, u64 sleep_time)
 	{
 		lv2_obj::sleep(ppu, sleep_time);
 
-		if (!lv2_obj::wait_timeout<true>(sleep_time))
-		{
-			ppu.incomplete_syscall_flag = true;
-		}
+		lv2_obj::wait_timeout<true>(sleep_time);
 	}
 	else
 	{

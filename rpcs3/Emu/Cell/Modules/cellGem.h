@@ -112,8 +112,6 @@ struct CellGemAttribute
 	be_t<u32> memory_ptr;
 	be_t<u32> spurs_addr;
 	u8 spu_priorities[8];
-
-	using enable_bitcopy = std::true_type;
 };
 
 struct CellGemCameraState
@@ -123,8 +121,6 @@ struct CellGemCameraState
 	be_t<f32> gain;
 	be_t<f32> pitch_angle;
 	be_t<f32> pitch_angle_estimate;
-
-	using enable_bitcopy = std::true_type;
 };
 
 struct CellGemExtPortData
@@ -215,6 +211,4 @@ struct CellGemVideoConvertAttribute
 	be_t<u32> buffer_memory;
 	be_t<u32> video_data_out;
 	u8 alpha;
-
-	using enable_bitcopy = std::true_type;
 };

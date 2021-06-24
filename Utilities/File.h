@@ -68,8 +68,6 @@ namespace fs
 		s64 atime;
 		s64 mtime;
 		s64 ctime;
-
-		using enable_bitcopy = std::true_type;
 	};
 
 	// Helper, layout is equal to iovec struct
@@ -104,8 +102,6 @@ namespace fs
 			: stat_t{}
 		{
 		}
-
-		using enable_bitcopy = std::false_type;
 	};
 
 	// Directory handle base

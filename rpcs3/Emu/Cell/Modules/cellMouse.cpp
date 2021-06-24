@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "Emu/IdManager.h"
-#include "Emu/System.h"
 #include "Emu/Cell/PPUModule.h"
 
 #include "Emu/Io/MouseHandler.h"
@@ -31,27 +30,6 @@ void fmt_class_string<CellMouseError>::format(std::string& out, u64 arg)
 
 		return unknown;
 	});
-}
-
-MouseHandlerBase::MouseHandlerBase(utils::serial& ar)
-{
-	ar(m_info.max_connect);
-
-	if (m_info.max_connect)
-	{
-		Emu.DeferDeserialization([this]()
-		{
-			Init(m_info.max_connect);
-			auto _ = init.init();
-		});
-	}
-}
-
-void MouseHandlerBase::save(utils::serial& ar)
-{
-	const auto inited = init.access();
-
-	ar(inited ? m_info.max_connect : 0);
 }
 
 error_code cellMouseInit(u32 max_connect)

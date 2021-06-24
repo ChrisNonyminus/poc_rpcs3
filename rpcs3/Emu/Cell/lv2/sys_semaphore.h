@@ -40,10 +40,6 @@ struct lv2_sema final : lv2_obj
 		, val(value)
 	{
 	}
-
-	lv2_sema(utils::serial& ar);
-	static std::shared_ptr<void> load(utils::serial& ar);
-	void save(utils::serial& ar);
 };
 
 // Aux

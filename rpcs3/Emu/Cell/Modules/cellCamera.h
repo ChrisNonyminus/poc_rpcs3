@@ -374,8 +374,6 @@ struct CellCameraInfoEx
 	be_t<u32> container;
 	be_t<s32> read_mode;
 	vm::bptr<u8> pbuf[2];
-
-	using enable_bitcopy = std::true_type;
 };
 
 struct CellCameraReadEx
@@ -393,8 +391,6 @@ class camera_context
 	{
 		u64 source;
 		u64 flag;
-
-		using enable_bitcopy = std::true_type;
 	};
 
 public:
@@ -421,7 +417,7 @@ public:
 
 	shared_mutex mutex;
 	shared_mutex mutex_notify_data_map;
-	u64 start_timestamp = 0;
+	Timer timer;
 
 	atomic_t<u8> read_mode{CELL_CAMERA_READ_FUNCCALL};
 	atomic_t<bool> is_streaming{false};
@@ -433,19 +429,11 @@ public:
 	struct attr_t
 	{
 		u32 v1, v2;
-
-		using enable_bitcopy = std::true_type;
 	};
-
 	attr_t attr[500]{};
 	atomic_t<u32> frame_num;
 
-	atomic_t<u8> init = 0;
-
-	camera_context() = default;
-	camera_context(utils::serial& ar);
-	void save(utils::serial& ar);
-	void serialize_common(utils::serial& ar);
+	atomic_t<u32> init = 0;
 
 	static constexpr auto thread_name = "Camera Thread"sv;
 };

@@ -68,6 +68,7 @@ namespace gl
 
 class GLGSRender : public GSRender, public ::rsx::reports::ZCULL_control
 {
+private:
 	GLFragmentProgram m_fragment_prog;
 	GLVertexProgram m_vertex_prog;
 
@@ -140,10 +141,7 @@ class GLGSRender : public GSRender, public ::rsx::reports::ZCULL_control
 
 public:
 	u64 get_cycles() final;
-
-	GLGSRender(utils::serial* ar) noexcept;
-	GLGSRender(utils::serial& ar) noexcept : GLGSRender(std::addressof(ar)) {}
-	GLGSRender() noexcept : GLGSRender(nullptr) {}
+	GLGSRender();
 
 private:
 

@@ -46,7 +46,6 @@ void main_application::InitializeEmulator(const std::string& user, bool show_gui
 	sys_log.always()("%s", firmware_string);
 }
 
-
 /** RPCS3 emulator has functions it desires to call from the GUI at times. Initialize them in here. */
 EmuCallbacks main_application::CreateCallbacks()
 {
@@ -58,12 +57,12 @@ EmuCallbacks main_application::CreateCallbacks()
 		{
 		case keyboard_handler::null:
 		{
-			fxo_serialize_body<KeyboardHandlerBase, NullKeyboardHandler>(Emu.ar.get());
+			g_fxo->init<KeyboardHandlerBase, NullKeyboardHandler>();
 			break;
 		}
 		case keyboard_handler::basic:
 		{
-			basic_keyboard_handler* ret = fxo_serialize_body<KeyboardHandlerBase, basic_keyboard_handler>(Emu.ar.get());
+			basic_keyboard_handler* ret = g_fxo->init<KeyboardHandlerBase, basic_keyboard_handler>();
 			ret->moveToThread(get_thread());
 			ret->SetTargetWindow(m_game_window);
 			break;
@@ -79,18 +78,18 @@ EmuCallbacks main_application::CreateCallbacks()
 		{
 			if (g_cfg.io.move == move_handler::mouse)
 			{
-				basic_mouse_handler* ret = fxo_serialize_body<MouseHandlerBase, basic_mouse_handler>(Emu.ar.get());
+				basic_mouse_handler* ret = g_fxo->init<MouseHandlerBase, basic_mouse_handler>();
 				ret->moveToThread(get_thread());
 				ret->SetTargetWindow(m_game_window);
 			}
 			else
-				fxo_serialize_body<MouseHandlerBase, NullMouseHandler>(Emu.ar.get());
+				g_fxo->init<MouseHandlerBase, NullMouseHandler>();
 
 			break;
 		}
 		case mouse_handler::basic:
 		{
-			basic_mouse_handler* ret = fxo_serialize_body<MouseHandlerBase, basic_mouse_handler>(Emu.ar.get());
+			basic_mouse_handler* ret = g_fxo->init<MouseHandlerBase, basic_mouse_handler>();
 			ret->moveToThread(get_thread());
 			ret->SetTargetWindow(m_game_window);
 			break;

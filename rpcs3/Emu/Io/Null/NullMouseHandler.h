@@ -4,8 +4,6 @@
 
 class NullMouseHandler final : public MouseHandlerBase
 {
-	using MouseHandlerBase::MouseHandlerBase;
-
 public:
 	void Init(const u32 max_connect) override
 	{

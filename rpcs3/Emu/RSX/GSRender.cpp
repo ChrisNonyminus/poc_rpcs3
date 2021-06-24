@@ -2,7 +2,8 @@
 
 #include "GSRender.h"
 
-GSRender::GSRender(utils::serial* ar) noexcept : rsx::thread(ar)
+GSRender::GSRender()
+	: m_context(nullptr)
 {
 	if (auto gs_frame = Emu.GetCallbacks().get_gs_frame())
 	{
@@ -35,13 +36,13 @@ void GSRender::on_init_thread()
 
 void GSRender::on_exit()
 {
-	rsx::thread::on_exit();
-
 	if (m_frame)
 	{
 		m_frame->delete_context(m_context);
 		m_context = nullptr;
 	}
+
+	rsx::thread::on_exit();
 }
 
 void GSRender::flip(const rsx::display_flip_info_t&)

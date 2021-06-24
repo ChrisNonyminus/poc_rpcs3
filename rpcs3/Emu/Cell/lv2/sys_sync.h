@@ -135,9 +135,7 @@ public:
 		if (protocol == SYS_SYNC_FIFO)
 		{
 			const auto res = queue.front();
-
-			if (!static_cast<E*>(res)->incomplete_syscall_flag)
-				queue.pop_front();
+			queue.pop_front();
 			return res;
 		}
 
@@ -156,9 +154,7 @@ public:
 		}
 
 		const auto res = *it;
-
-		if (!static_cast<E*>(res)->incomplete_syscall_flag)
-			queue.erase(it);
+		queue.erase(it);
 		return res;
 	}
 
@@ -197,10 +193,6 @@ public:
 	{
 		g_to_awake.emplace_back(thread);
 	}
-
-	// Serialization related
-	static void set_future_sleep(ppu_thread* ppu);
-	static bool is_scheduler_ready();
 
 	static void cleanup();
 
@@ -324,23 +316,6 @@ public:
 		}
 	}
 
-	template <typename T>
-	static std::shared_ptr<T> load(u64 ipc_key, std::shared_ptr<T> make, u64 pshared = -1)
-	{
-		if (pshared == umax ? ipc_key != 0 : pshared != 0)
-		{
-			g_fxo->need<ipc_manager<T, u64>>();
-
-			make = g_fxo->get<ipc_manager<T, u64>>().add(ipc_key, [&]()
-			{
-				return make;
-			}, true).second;
-		}
-
-		ensure(CELL_OK == make->on_id_create());
-		return make;
-	}
-
 	template <bool IsUsleep = false, bool Scale = true>
 	static bool wait_timeout(u64 usec, cpu_thread* const cpu = {})
 	{
@@ -446,9 +421,6 @@ private:
 
 	// Scheduler queue for timeouts (wait until -> thread)
 	static std::deque<std::pair<u64, class cpu_thread*>> g_waiting;
-
-	// Threads which must call lv2_obj::sleep before the scheduler starts
-	static std::deque<class ppu_thread*> g_to_sleep;
 
 	static void schedule_all();
 };

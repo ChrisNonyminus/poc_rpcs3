@@ -179,21 +179,12 @@ struct audio_port
 		return vm::_ptr<f32>(buf_addr(offset));
 	}
 
+
 	// Tags
 	u32 prev_touched_tag_nr;
 	f32 last_tag_value[PORT_BUFFER_TAG_COUNT] = { 0 };
 
 	void tag(s32 offset = 0);
-
-	audio_port() = default;
-
-	// Handle copy ctor of atomic var
-	audio_port(const audio_port& r)
-	{
-		std::memcpy(this, &r, sizeof(r));
-	}
-
-	using enable_bitcopy = std::true_type;
 };
 
 struct cell_audio_config
@@ -382,7 +373,7 @@ public:
 	atomic_t<bool> m_update_configuration = false;
 
 	shared_mutex mutex;
-	atomic_t<u8> init = 0;
+	atomic_t<u32> init = 0;
 
 	u32 key_count = 0;
 	u8 event_period = 0;
@@ -406,9 +397,9 @@ public:
 
 	void operator()();
 
-	cell_audio_thread() = default;
-	cell_audio_thread(utils::serial& ar);
-	void save(utils::serial& ar);
+	cell_audio_thread()
+	{
+	}
 
 	audio_port* open_port()
 	{
