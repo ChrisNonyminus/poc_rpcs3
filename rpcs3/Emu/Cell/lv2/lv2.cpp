@@ -1376,6 +1376,7 @@ void lv2_obj::cleanup()
 	g_ppu.clear();
 	g_pending.clear();
 	g_waiting.clear();
+	g_to_sleep.clear();
 }
 
 void lv2_obj::schedule_all()
