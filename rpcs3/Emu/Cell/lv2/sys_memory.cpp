@@ -21,9 +21,9 @@ lv2_memory_container::lv2_memory_container(u32 size, bool from_idm) noexcept
 {
 }
 
-lv2_memory_container::lv2_memory_container(utils::serial& ar, u32 id) noexcept
+lv2_memory_container::lv2_memory_container(utils::serial& ar, bool from_idm) noexcept
 	: size(ar)
-	, id{id}
+	, id{from_idm ? idm::last_id() : SYS_MEMORY_CONTAINER_ID_INVALID}
 	, used(ar)
 {
 }
@@ -31,7 +31,7 @@ lv2_memory_container::lv2_memory_container(utils::serial& ar, u32 id) noexcept
 std::shared_ptr<void> lv2_memory_container::load(utils::serial& ar)
 {
 	// Use idm::last_id() only for the instances at IDM  
-	return std::make_shared<lv2_memory_container>(ar, idm::last_id());
+	return std::make_shared<lv2_memory_container>(stx::exact_t<utils::serial&>(ar), true);
 }
 
 void lv2_memory_container::save(utils::serial& ar)
