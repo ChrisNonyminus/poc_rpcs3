@@ -250,6 +250,9 @@ struct lv2_spu_image : lv2_obj
 		, nsegs(nsegs)
 	{
 	}
+
+	lv2_spu_image(utils::serial& ar);
+	void save(utils::serial& ar);
 };
 
 struct sys_spu_thread_group_syscall_253_info

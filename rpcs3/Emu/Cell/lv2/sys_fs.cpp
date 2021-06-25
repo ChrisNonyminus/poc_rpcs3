@@ -318,6 +318,8 @@ void lv2_dir::save(utils::serial& ar)
 	{
 		ar(entry.name, static_cast<const fs::stat_t&>(entry));
 	}
+
+	ar(pos);
 }
 
 loaded_npdrm_keys::loaded_npdrm_keys(utils::serial& ar)
