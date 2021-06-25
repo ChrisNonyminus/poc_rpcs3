@@ -3518,7 +3518,8 @@ bool spu_thread::process_mfc_cmd()
 			std::memcpy(dump.data, _ptr<u8>(ch_mfc_cmd.lsa & 0x3ff80), 128);
 		}
 
-		return !test_stopped();
+		static_cast<void>(test_stopped());
+		return true;
 	}
 	case MFC_PUTLLUC_CMD:
 	{
@@ -3532,7 +3533,8 @@ bool spu_thread::process_mfc_cmd()
 
 		do_putlluc(ch_mfc_cmd);
 		ch_atomic_stat.set_value(MFC_PUTLLUC_SUCCESS);
-		return !test_stopped();
+		static_cast<void>(test_stopped());
+		return true;
 	}
 	case MFC_PUTQLLUC_CMD:
 	{
@@ -4814,6 +4816,7 @@ bool spu_thread::stop_and_signal(u32 code)
 
 				if (is_stopped(old))
 				{
+					ch_out_mbox.set_value(value);
 					return false;
 				}
 
