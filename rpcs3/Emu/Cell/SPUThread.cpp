@@ -4181,6 +4181,11 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 					spu_log.warning("sys_spu_thread_send_event(spup=%d, data0=0x%x, data1=0x%x): error (%s)", spup, (value & 0x00ffffff), data, res);
 				}
 
+				if (res == CELL_EAGAIN)
+				{
+					return false;
+				}
+
 				ch_in_mbox.set_values(1, res);
 				return true;
 			}
@@ -4517,7 +4522,7 @@ bool spu_thread::stop_and_signal(u32 code)
 
 		u32 spuq = 0;
 
-		if (!ch_out_mbox.try_pop(spuq))
+		if (!ch_out_mbox.try_read(spuq))
 		{
 			fmt::throw_exception("sys_spu_thread_receive_event(): Out_MBox is empty");
 		}
@@ -4527,6 +4532,20 @@ bool spu_thread::stop_and_signal(u32 code)
 			spu_log.error("sys_spu_thread_receive_event(): In_MBox is not empty (%d)", count);
 			return ch_in_mbox.set_values(1, CELL_EBUSY), true;
 		}
+
+		struct clear_mbox
+		{
+			spu_thread& _this;
+
+			~clear_mbox() noexcept
+			{
+				if (!_this.incomplete_syscall_flag)
+				{
+					u32 val = 0;
+					_this.ch_out_mbox.try_pop(val);
+				}
+			}
+		} clear{*this};
 
 		spu_log.trace("sys_spu_thread_receive_event(spuq=0x%x)", spuq);
 
@@ -4540,6 +4559,8 @@ bool spu_thread::stop_and_signal(u32 code)
 
 		spu_function_logger logger(*this, "sys_spu_thread_receive_event");
 
+		std::shared_ptr<lv2_event_queue> queue;
+
 		while (true)
 		{
 			// Check group status, wait if necessary
@@ -4551,6 +4572,7 @@ bool spu_thread::stop_and_signal(u32 code)
 
 				if (is_stopped(old))
 				{
+					incomplete_syscall_flag = true;
 					return false;
 				}
 
@@ -4561,6 +4583,7 @@ bool spu_thread::stop_and_signal(u32 code)
 
 			if (is_stopped())
 			{
+				incomplete_syscall_flag = true;
 				return false;
 			}
 
@@ -4570,15 +4593,13 @@ bool spu_thread::stop_and_signal(u32 code)
 				continue;
 			}
 
-			lv2_event_queue* queue = nullptr;
-
 			for (auto& v : this->spuq)
 			{
 				if (spuq == v.first)
 				{
 					if (lv2_obj::check(v.second))
 					{
-						queue = v.second.get();
+						queue = v.second;
 						break;
 					}
 				}
@@ -4627,18 +4648,25 @@ bool spu_thread::stop_and_signal(u32 code)
 
 		while (auto old = state.fetch_sub(cpu_flag::signal))
 		{
+			if (old & cpu_flag::signal)
+			{
+				break;
+			}
+
 			if (is_stopped(old))
 			{
-				ch_out_mbox.set_value(spuq);
+				std::lock_guard qlock(queue->mutex);
+
+				if (old & cpu_flag::signal)
+				{
+					break;
+				}
+
+				incomplete_syscall_flag = true;
 
 				// The thread group cannot be stopped while waiting for an event
 				ensure(!(old & cpu_flag::stop));
 				return false;
-			}
-
-			if (old & cpu_flag::signal)
-			{
-				break;
 			}
 
 			thread_ctrl::wait_on(state, old);

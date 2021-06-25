@@ -5387,11 +5387,7 @@ public:
 			spu_runtime::g_escape(_spu);
 		}
 
-		if (_spu->test_stopped())
-		{
-			_spu->pc += 4;
-			spu_runtime::g_escape(_spu);
-		}
+		static_cast<void>(_spu->test_stopped());
 	}
 
 	void STOP(spu_opcode_t op) //
