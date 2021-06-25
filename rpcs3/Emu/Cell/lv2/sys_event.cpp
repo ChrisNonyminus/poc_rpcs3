@@ -139,6 +139,7 @@ CellError lv2_event_queue::send(lv2_event event)
 				cpu->state += cpu_flag::exit;
 			}
 
+			// Fake error for abort
 			return CELL_EAGAIN;
 		}
 
@@ -150,6 +151,18 @@ CellError lv2_event_queue::send(lv2_event event)
 	{
 		// Store event in In_MBox
 		auto& spu = static_cast<spu_thread&>(*sq.front());
+
+		if (spu.incomplete_syscall_flag)
+		{
+			if (auto cpu = get_current_cpu_thread<ppu_thread>())
+			{
+				cpu->incomplete_syscall_flag = true;
+				cpu->state += cpu_flag::exit;
+			}
+
+			// Fake error for abort
+			return CELL_EAGAIN;
+		}
 
 		// TODO: use protocol?
 		sq.pop_front();

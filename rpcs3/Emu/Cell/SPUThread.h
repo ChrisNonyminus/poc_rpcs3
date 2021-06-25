@@ -783,6 +783,7 @@ public:
 	atomic_t<u8> debugger_float_mode = 0;
 
 	bool stop_flag_removal_protection = false;
+	bool incomplete_syscall_flag = false;
 
 	void push_snr(u32 number, u32 value);
 	static void do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8* ls);

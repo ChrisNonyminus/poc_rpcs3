@@ -284,6 +284,18 @@ void fxo_serialize<id_manager::id_map<lv2_spu_group>>(utils::serial* ar)
 	fxo_serialize_body<id_manager::id_map<lv2_spu_group>>(ar);
 }
 
+lv2_spu_image::lv2_spu_image(utils::serial& ar)
+	: e_entry(ar)
+	, segs(ar.operator decltype(segs)())
+	, nsegs(ar)
+{
+}
+
+void lv2_spu_image::save(utils::serial& ar)
+{
+	ar(e_entry, segs, nsegs);
+}
+
 // Get spu thread ptr, returns group ptr as well for refcounting
 std::pair<named_thread<spu_thread>*, std::shared_ptr<lv2_spu_group>> lv2_spu_group::get_thread(u32 id)
 {

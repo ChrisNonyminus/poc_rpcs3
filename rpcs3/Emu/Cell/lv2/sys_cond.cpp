@@ -15,34 +15,19 @@ lv2_cond::lv2_cond(utils::serial& ar)
 	: key(ar)
 	, name(ar)
 	, mtx_id(ar)
-	, mutex([&]
-	{
-		if (auto mtx = idm::get_unlocked<lv2_obj, lv2_mutex>(mtx_id))
-		{
-			// Already initialized
-			return mtx;
-		}
-
-		Emu.DeferDeserialization([=, &mtx = mutex]()
-		{
-			// Defer resolving
-			mtx = ensure(idm::get_unlocked<lv2_obj, lv2_mutex>(mtx_id));
-		});
-
-		// Null until resolved
-		return std::shared_ptr<lv2_mutex>();
-	}())
+	, mutex(idm::get_unlocked<lv2_obj, lv2_mutex>(mtx_id)) // May be nullptr
 {
 }
 
 CellError lv2_cond::on_id_create()
 {
+	exists++;
+
 	static auto do_it = [](lv2_cond* _this) -> CellError
 	{
 		if (lv2_obj::check(_this->mutex))
 		{
 			_this->mutex->cond_count++;
-			_this->exists++;
 			return {};
 		}
 
@@ -59,6 +44,11 @@ CellError lv2_cond::on_id_create()
 
 	Emu.DeferDeserialization([this]()
 	{
+		if (!mutex)
+		{
+			mutex = ensure(idm::get_unlocked<lv2_obj, lv2_mutex>(mtx_id));
+		}
+
 		// Defer function
 		ensure(CellError{} == do_it(this));
 	});
