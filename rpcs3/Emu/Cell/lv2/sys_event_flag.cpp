@@ -307,9 +307,13 @@ error_code sys_event_flag_set(cpu_thread& cpu, u32 id, u64 bitptn)
 		{
 			if (static_cast<ppu_thread*>(ppu)->incomplete_syscall_flag)
 			{
-				cpu.try_get<ppu_thread>()->incomplete_syscall_flag = true;
+				if (auto _ppu = cpu.try_get<ppu_thread>())
+					_ppu->incomplete_syscall_flag = true;
+
 				cpu.state += cpu_flag::exit;
-				return {};
+
+				// Fake error for abort
+				return not_an_error(CELL_EAGAIN);
 			}
 		}
 

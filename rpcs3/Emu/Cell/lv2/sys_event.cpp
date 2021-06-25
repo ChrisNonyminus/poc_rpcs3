@@ -139,6 +139,7 @@ CellError lv2_event_queue::send(lv2_event event)
 				cpu->state += cpu_flag::exit;
 			}
 
+			// Fake error for abort
 			return CELL_EAGAIN;
 		}
 
@@ -159,6 +160,7 @@ CellError lv2_event_queue::send(lv2_event event)
 				cpu->state += cpu_flag::exit;
 			}
 
+			// Fake error for abort
 			return CELL_EAGAIN;
 		}
 

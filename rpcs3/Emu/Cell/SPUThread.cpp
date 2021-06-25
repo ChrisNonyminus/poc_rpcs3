@@ -4208,6 +4208,12 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				// TODO: check passing spup value
 				if (auto res = queue ? queue->send(SYS_SPU_THREAD_EVENT_USER_KEY, lv2_id, (u64{spup} << 32) | (value & 0x00ffffff), data) : CELL_ENOTCONN)
 				{
+					if (res == CELL_EAGAIN)
+					{
+						ch_out_mbox.set_value(data);
+						return false;
+					}
+
 					spu_log.warning("sys_spu_thread_throw_event(spup=%d, data0=0x%x, data1=0x%x) failed (error=%s)", spup, (value & 0x00ffffff), data, res);
 				}
 
@@ -4232,6 +4238,12 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				// Use the syscall to set flag
 				const auto res = ch_in_mbox.get_count() ? CELL_EBUSY : 0u + sys_event_flag_set(*this, data, 1ull << flag);
 
+				if (res == CELL_EAGAIN)
+				{
+					ch_out_mbox.set_value(data);
+					return false;
+				}
+
 				if (res == CELL_EBUSY)
 				{
 					spu_log.warning("sys_event_flag_set_bit(value=0x%x (flag=%d)): In_MBox is not empty (%d)", value, flag, ch_in_mbox.get_count());
@@ -4255,7 +4267,12 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				spu_log.trace("sys_event_flag_set_bit_impatient(id=%d, value=0x%x (flag=%d))", data, value, flag);
 
 				// Use the syscall to set flag
-				sys_event_flag_set(*this, data, 1ull << flag);
+				if (sys_event_flag_set(*this, data, 1ull << flag) + 0u == CELL_EAGAIN)
+				{
+					ch_out_mbox.set_value(data);
+					return false;
+				}
+
 				return true;
 			}
 			else
