@@ -993,18 +993,29 @@ void ppu_thread::cpu_task()
 			thread_ctrl::wait_on<atomic_wait::op_ne>(g_progr_ptotal, 0);
 			g_fxo->get<progress_dialog_workaround>().skip_the_progress_dialog = true;
 
+			const bool loading_savestate = Emu.ar.operator bool();
+
 			// Sadly we can't postpone it any longer
 			Emu.FixGuestTime();
 
 			if (lv2_obj::is_scheduler_ready())
 			{
-				Emu.CallAfter([]
+				auto func = []()
 				{
 					if (Emu.IsStarting())
 					{
 						Emu.FinalizeRunRequest();
 					}
-				});
+				};
+
+				if (loading_savestate)
+				{
+					Emu.CallAfter(func);
+				}
+				else
+				{
+					func();
+				}
 			}
 
 			break;
