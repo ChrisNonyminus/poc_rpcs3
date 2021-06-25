@@ -77,7 +77,7 @@ static std::array<serial_ver_t, 18> s_serial_versions;
 		return ::s_serial_versions[identifier].current_version;\
 	}
 
-SERIALIZATION_VER(global_version, 0, {3}) // For stuff not listed here
+SERIALIZATION_VER(global_version, 0, {4}) // For stuff not listed here
 SERIALIZATION_VER(ppu, 1, {1})
 SERIALIZATION_VER(spu, 2, {2})
 SERIALIZATION_VER(lv2_sync, 3, {1})
@@ -662,6 +662,8 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 	m_state_inspection_savestate = g_cfg.savestate.state_inspection_mode.get();
 
+	std::string bdvd_by_title_id;
+
 	if (ar)
 	{
 		struct file_header
@@ -728,10 +730,14 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			return game_boot_result::savestate_version_unsupported;
 		}
 
-		(*ar)(m_path);
+		(*ar)(m_path, bdvd_by_title_id);
 
-		klic.emplace_back(std::bit_cast<u128>(ar->operator std::array<u8, 16>()));
-		if (!klic[0]) klic.clear();
+		klic.clear();
+
+		if (u128 key = ar->operator u128())
+		{
+			klic.emplace_back(key);
+		}
 	}
 
 	const std::string resolved_path = GetCallbacks().resolve_path(m_path);
@@ -757,6 +763,22 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 		if (!games.IsMap())
 		{
 			games.reset();
+		}
+
+		if (!bdvd_by_title_id.empty())
+		{
+			m_title_id = bdvd_by_title_id;
+
+			// Load /dev_bdvd/ from game list if available
+			if (auto node = games[m_title_id])
+			{
+				disc = node.Scalar();
+			}
+			else
+			{
+				sys_log.fatal("Disc directory not found. Savestate cannot be loaded. ('%s')", m_title_id);
+				return game_boot_result::invalid_file_or_folder;
+			}
 		}
 
 		sys_log.notice("Path: %s", m_path);
@@ -1914,6 +1936,7 @@ void Emulator::Stop(bool savestate, bool restart)
 			ar(g_cfg.savestate.state_inspection_mode.get());
 			ar(usz{0}); // Offset of versioning data, to be overwritten at the end of saving
 			ar(m_path);
+			ar(!m_title_id.empty() && !vfs::get("/dev_bdvd").empty() ? m_title_id : std::string());
 			ar(klic.empty() ? std::array<u8, 16>{} : std::bit_cast<std::array<u8, 16>>(klic[0]));
 			vm::save(ar);
 			save_hdd1();
