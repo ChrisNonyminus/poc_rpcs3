@@ -2006,7 +2006,8 @@ void Emulator::Stop(bool savestate, bool restart)
 				const usz old_size = ar.data.size();
 				ar.data = tar_object::save_directory(path, {}, std::move(ar.data));
 				const usz tar_size = ar.data.size() - old_size;
-				std::memcpy(ar.data.data() - sizeof(usz) - tar_size, &tar_size, sizeof(usz));
+				std::memcpy(ar.data.data() + old_size - sizeof(usz), &tar_size, sizeof(usz));
+				sys_log.success("Saved the contents of directory '%s' (size=0x%x)", path, tar_size);
 			};
 
 			auto save_hdd1 = [&]()
@@ -2023,7 +2024,6 @@ void Emulator::Stop(bool savestate, bool restart)
 					if (!g_cfg.savestate.suspend_emu)
 					{
 						save_tar(_path);
-						sys_log.success("Saved the contents of directory '%s'", _path);
 					}
 					else
 					{
@@ -2046,7 +2046,6 @@ void Emulator::Stop(bool savestate, bool restart)
 							{
 								ar(entry.name);
 								save_tar(path + entry.name);
-								sys_log.success("Saved the contents of directory '%s'", path + entry.name);
 							}
 						}
 					}
