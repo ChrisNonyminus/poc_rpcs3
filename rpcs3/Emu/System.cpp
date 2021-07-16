@@ -2034,7 +2034,7 @@ void Emulator::Stop(bool savestate, bool restart)
 
 			auto save_hdd0 = [&]()
 			{
-				if (!g_cfg.savestate.suspend_emu)
+				if (!g_cfg.savestate.suspend_emu && g_cfg.savestate.save_disc_game_data)
 				{
 					const std::string path = vfs::get("/dev_hdd0/game/");
 
