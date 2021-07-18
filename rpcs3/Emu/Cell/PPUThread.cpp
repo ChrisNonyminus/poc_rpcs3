@@ -134,6 +134,7 @@ void fmt_class_string<typename ppu_thread::call_history_t>::format(std::string& 
 	}
 }
 
+template <>
 bool serialize<ppu_thread::cr_bits>(utils::serial& ar, typename ppu_thread::cr_bits& o)
 {
 	if (ar.is_writing())
