@@ -26,7 +26,7 @@ std::shared_ptr<void> lv2_rwlock::load(utils::serial& ar)
 void lv2_rwlock::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(lv2_sync);
-	ar(protocol, key, name, owner & -2);
+	ar(protocol, key, name, owner);
 }
 
 error_code sys_rwlock_create(ppu_thread& ppu, vm::ptr<u32> rw_lock_id, vm::ptr<sys_rwlock_attribute_t> attr)
