@@ -583,7 +583,7 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 		case vk::driver_vendor::AMD:
 #if !defined(__linux__)
 			// Intel chipsets would fail on BSD in most cases and DRM_IOCTL_i915_GEM_USERPTR unimplemented
-		case vk::driver_vendor::INTEL:
+		case vk::driver_vendor::ANV:
 #endif
 			if (backend_config.supports_passthrough_dma)
 			{
@@ -1841,7 +1841,7 @@ void VKGSRender::load_program_env()
 		fill_scale_offset_data(buf, false);
 		fill_user_clip_data(buf + 64);
 		*(reinterpret_cast<u32*>(buf + 128)) = rsx::method_registers.transform_branch_bits();
-		*(reinterpret_cast<f32*>(buf + 132)) = rsx::method_registers.point_size();
+		*(reinterpret_cast<f32*>(buf + 132)) = rsx::method_registers.point_size() * rsx::get_resolution_scale();
 		*(reinterpret_cast<f32*>(buf + 136)) = rsx::method_registers.clip_min();
 		*(reinterpret_cast<f32*>(buf + 140)) = rsx::method_registers.clip_max();
 
