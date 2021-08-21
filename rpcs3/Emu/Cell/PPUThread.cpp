@@ -83,8 +83,7 @@ static const bool s_tsx_avx = utils::has_avx();
 template <>
 void fmt_class_string<ppu_join_status>::format(std::string& out, u64 arg)
 {
-	format_enum(out, arg, [](ppu_join_status js)
-	{
+	format_enum(out, arg, [](ppu_join_status js) {
 		switch (js)
 		{
 		case ppu_join_status::joinable: return "none";
@@ -101,8 +100,7 @@ void fmt_class_string<ppu_join_status>::format(std::string& out, u64 arg)
 template <>
 void fmt_class_string<ppu_thread_status>::format(std::string& out, u64 arg)
 {
-	format_enum(out, arg, [](ppu_thread_status s)
-	{
+	format_enum(out, arg, [](ppu_thread_status s) {
 		switch (s)
 		{
 		case PPU_THREAD_STATUS_IDLE: return "IDLE";
@@ -165,8 +163,7 @@ static bool ppu_break(ppu_thread& ppu, ppu_opcode_t op);
 
 extern void do_cell_atomic_128_store(u32 addr, const void* to_write);
 
-const auto ppu_gateway = build_function_asm<void(*)(ppu_thread*)>([](asmjit::X86Assembler& c, auto& args)
-{
+const auto ppu_gateway = build_function_asm<void (*)(ppu_thread*)>([](asmjit::X86Assembler& c, auto& args) {
 	// Gateway for PPU, converts from native to GHC calling convention, also saves RSP value for escape
 	using namespace asmjit;
 
@@ -266,8 +263,7 @@ const auto ppu_gateway = build_function_asm<void(*)(ppu_thread*)>([](asmjit::X86
 	c.ret();
 });
 
-const extern auto ppu_escape = build_function_asm<void(*)(ppu_thread*)>([](asmjit::X86Assembler& c, auto& args)
-{
+const extern auto ppu_escape = build_function_asm<void (*)(ppu_thread*)>([](asmjit::X86Assembler& c, auto& args) {
 	using namespace asmjit;
 
 	// Restore native stack pointer (longjmp emulation)
@@ -279,8 +275,7 @@ const extern auto ppu_escape = build_function_asm<void(*)(ppu_thread*)>([](asmji
 
 void ppu_recompiler_fallback(ppu_thread& ppu);
 
-const auto ppu_recompiler_fallback_ghc = build_function_asm<void(*)(ppu_thread& ppu)>([](asmjit::X86Assembler& c, auto& args)
-{
+const auto ppu_recompiler_fallback_ghc = build_function_asm<void (*)(ppu_thread& ppu)>([](asmjit::X86Assembler& c, auto& args) {
 	using namespace asmjit;
 
 	c.mov(args[0], x86::rbp);
@@ -303,9 +298,7 @@ static u64 ppu_cache(u32 addr)
 
 	// Select opcode table
 	const auto& table = *(
-		g_cfg.core.ppu_decoder == ppu_decoder_type::precise
-		? &g_ppu_interpreter_precise.get_table()
-		: &g_ppu_interpreter_fast.get_table());
+	    g_cfg.core.ppu_decoder == ppu_decoder_type::precise ? &g_ppu_interpreter_precise.get_table() : &g_ppu_interpreter_fast.get_table());
 
 	return reinterpret_cast<uptr>(table[ppu_decode(vm::read32(addr))]);
 }
@@ -501,10 +494,11 @@ static bool ppu_break(ppu_thread& ppu, ppu_opcode_t)
 	const bool pause_all = g_debugger_pause_all_threads_on_bp;
 
 	// Pause
-	ppu.state.atomic_op([&](bs_t<cpu_flag>& state)
-	{
-		if (pause_all) state += cpu_flag::dbg_global_pause;
-		if (pause_all || !(state & cpu_flag::dbg_step)) state += cpu_flag::dbg_pause;
+	ppu.state.atomic_op([&](bs_t<cpu_flag>& state) {
+		if (pause_all)
+			state += cpu_flag::dbg_global_pause;
+		if (pause_all || !(state & cpu_flag::dbg_step))
+			state += cpu_flag::dbg_pause;
 	});
 
 	if (pause_all)
@@ -539,7 +533,7 @@ extern bool ppu_breakpoint(u32 addr, bool is_adding)
 	const u64 _break = reinterpret_cast<uptr>(&ppu_break);
 
 	// Remove breakpoint parameters
-	u64 to_set = 0;
+	u64 to_set   = 0;
 	u64 expected = _break;
 
 	if (u32 hle_addr{}; g_fxo->is_init<ppu_function_manager>() && (hle_addr = g_fxo->get<ppu_function_manager>().addr))
@@ -606,7 +600,7 @@ extern bool ppu_patch(u32 addr, u32 value)
 
 	*vm::get_super_ptr<u32>(addr) = value;
 
-	const u64 _break = reinterpret_cast<uptr>(&ppu_break);
+	const u64 _break   = reinterpret_cast<uptr>(&ppu_break);
 	const u64 fallback = reinterpret_cast<uptr>(&ppu_fallback);
 
 	if (is_exec)
@@ -654,20 +648,21 @@ std::string ppu_thread::dump_regs() const
 		auto reg = gpr[i];
 
 		// Fixup for syscall arguments
-		if (current_function && i >= 3 && i <= 10) reg = syscall_args[i - 3];
+		if (current_function && i >= 3 && i <= 10)
+			reg = syscall_args[i - 3];
 
 		fmt::append(ret, "r%d%s: 0x%-8llx", i, i <= 9 ? " " : "", reg);
 
 		constexpr u32 max_str_len = 32;
-		constexpr u32 hex_count = 8;
+		constexpr u32 hex_count   = 8;
 
 		if (reg <= u32{umax} && vm::check_addr<max_str_len>(static_cast<u32>(reg)))
 		{
 			bool is_function = false;
-			u32 toc = 0;
+			u32 toc          = 0;
 
 			if (const u32 reg_ptr = *vm::get_super_ptr<u32>(static_cast<u32>(reg));
-				vm::check_addr<max_str_len>(reg_ptr))
+			    vm::check_addr<max_str_len>(reg_ptr))
 			{
 				if ((reg | reg_ptr) % 4 == 0 && vm::check_addr(reg_ptr, vm::page_executable))
 				{
@@ -676,7 +671,7 @@ std::string ppu_thread::dump_regs() const
 					if (toc % 4 == 0 && vm::check_addr(toc))
 					{
 						is_function = true;
-						reg = reg_ptr;
+						reg         = reg_ptr;
 					}
 				}
 			}
@@ -707,7 +702,7 @@ std::string ppu_thread::dump_regs() const
 			// NTS: size of 3 and above is required
 			// If ends with a newline, only one character is required
 			else if ((sv.size() == buf_tmp.size() || (sv.size() >= (buf_tmp[sv.size()] == '\n' ? 1 : 3))) &&
-				std::all_of(sv.begin(), sv.end(), [](u8 c){ return std::isprint(c); }))
+			         std::all_of(sv.begin(), sv.end(), [](u8 c) { return std::isprint(c); }))
 			{
 				fmt::append(ret, " -> \"%s\"", sv);
 			}
@@ -818,15 +813,13 @@ std::vector<std::pair<u32, u32>> ppu_thread::dump_callstack_list() const
 	bool first = true;
 
 	for (
-		u64 sp = r1;
-		sp % 0x10 == 0u && sp >= stack_min && sp <= stack_max - ppu_stack_start_offset;
-		sp = *vm::get_super_ptr<u64>(static_cast<u32>(sp)), first = false
-		)
+	    u64 sp = r1;
+	    sp % 0x10 == 0u && sp >= stack_min && sp <= stack_max - ppu_stack_start_offset;
+	    sp = *vm::get_super_ptr<u64>(static_cast<u32>(sp)), first = false)
 	{
 		u64 addr = *vm::get_super_ptr<u64>(static_cast<u32>(sp + 16));
 
-		auto is_invalid = [](u64 addr)
-		{
+		auto is_invalid = [](u64 addr) {
 			if (addr > u32{umax} || addr % 4 || !vm::check_addr(static_cast<u32>(addr), vm::page_executable))
 			{
 				return true;
@@ -920,8 +913,8 @@ std::string ppu_thread::dump_all() const
 	if (!call_history.data.empty())
 	{
 		ret +=
-			"\nCalling History:"
-			"\n================";
+		    "\nCalling History:"
+		    "\n================";
 
 		fmt::append(ret, "%s", call_history);
 	}
@@ -929,7 +922,7 @@ std::string ppu_thread::dump_all() const
 	return ret;
 }
 
-extern thread_local std::string(*g_tls_log_prefix)();
+extern thread_local std::string (*g_tls_log_prefix)();
 
 void ppu_thread::cpu_task()
 {
@@ -950,9 +943,7 @@ void ppu_thread::cpu_task()
 		{
 		case ppu_cmd::opcode:
 		{
-			cmd_pop(), g_cfg.core.ppu_decoder == ppu_decoder_type::precise
-				? g_ppu_interpreter_precise.decode(arg)(*this, {arg})
-				: g_ppu_interpreter_fast.decode(arg)(*this, {arg});
+			cmd_pop(), g_cfg.core.ppu_decoder == ppu_decoder_type::precise ? g_ppu_interpreter_precise.decode(arg)(*this, {arg}) : g_ppu_interpreter_fast.decode(arg)(*this, {arg});
 			break;
 		}
 		case ppu_cmd::set_gpr:
@@ -1028,8 +1019,7 @@ void ppu_thread::cpu_task()
 
 			if (lv2_obj::is_scheduler_ready())
 			{
-				auto func = []()
-				{
+				auto func = []() {
 					if (Emu.IsStarting())
 					{
 						Emu.FinalizeRunRequest();
@@ -1118,21 +1108,24 @@ void ppu_thread::exec_task()
 	}
 
 	const auto cache = vm::g_exec_addr;
-	using func_t = decltype(&ppu_interpreter::UNK);
+	using func_t     = decltype(&ppu_interpreter::UNK);
 
 	while (true)
 	{
-		const auto exec_op = [this](u64 op)
-		{
+		const auto exec_op = [this](u64 op) {
 			return reinterpret_cast<func_t>(op)(*this, {vm::read32(cia).get()});
 		};
 
 		if (cia % 8 || state) [[unlikely]]
 		{
-			if (test_stopped()) return;
+			if (test_stopped())
+				return;
 
 			// Decode single instruction (may be step)
-			if (exec_op(*reinterpret_cast<u64*>(cache + u64{cia} * 2))) { cia += 4; }
+			if (exec_op(*reinterpret_cast<u64*>(cache + u64{cia} * 2)))
+			{
+				cia += 4;
+			}
 			continue;
 		}
 
@@ -1143,48 +1136,49 @@ void ppu_thread::exec_task()
 		{
 			const v128 _op0 = *reinterpret_cast<const v128*>(cache + _pos);
 			const v128 _op1 = *reinterpret_cast<const v128*>(cache + _pos + 16);
-			op0 = _op0._u64[0];
-			op1 = _op0._u64[1];
-			op2 = _op1._u64[0];
-			op3 = _op1._u64[1];
+			op0             = _op0._u64[0];
+			op1             = _op0._u64[1];
+			op2             = _op1._u64[0];
+			op3             = _op1._u64[1];
 		}
 
-		while (exec_op(op0)) [[likely]]
-		{
-			cia += 4;
-
-			if (exec_op(op1)) [[likely]]
+		while (exec_op(op0))
+			[[likely]]
 			{
 				cia += 4;
 
-				if (exec_op(op2)) [[likely]]
+				if (exec_op(op1)) [[likely]]
 				{
 					cia += 4;
 
-					if (exec_op(op3)) [[likely]]
+					if (exec_op(op2)) [[likely]]
 					{
 						cia += 4;
 
-						if (state) [[unlikely]]
+						if (exec_op(op3)) [[likely]]
 						{
-							break;
-						}
+							cia += 4;
 
-						_pos += 32;
-						const v128 _op0 = *reinterpret_cast<const v128*>(cache + _pos);
-						const v128 _op1 = *reinterpret_cast<const v128*>(cache + _pos + 16);
-						op0 = _op0._u64[0];
-						op1 = _op0._u64[1];
-						op2 = _op1._u64[0];
-						op3 = _op1._u64[1];
-						continue;
+							if (state) [[unlikely]]
+							{
+								break;
+							}
+
+							_pos += 32;
+							const v128 _op0 = *reinterpret_cast<const v128*>(cache + _pos);
+							const v128 _op1 = *reinterpret_cast<const v128*>(cache + _pos + 16);
+							op0             = _op0._u64[0];
+							op1             = _op0._u64[1];
+							op2             = _op1._u64[0];
+							op3             = _op1._u64[1];
+							continue;
+						}
+						break;
 					}
 					break;
 				}
 				break;
 			}
-			break;
-		}
 	}
 }
 
@@ -1194,14 +1188,7 @@ ppu_thread::~ppu_thread()
 }
 
 ppu_thread::ppu_thread(const ppu_thread_params& param, std::string_view name, u32 prio, int detached)
-	: cpu_thread(idm::last_id())
-	, prio(prio)
-	, stack_size(param.stack_size)
-	, stack_addr(param.stack_addr)
-	, joiner(detached != 0 ? ppu_join_status::detached : ppu_join_status::joinable)
-	, entry_func(param.entry)
-	, start_time(get_guest_system_time())
-	, ppu_tname(make_single<std::string>(name))
+    : cpu_thread(idm::last_id()), prio(prio), stack_size(param.stack_size), stack_addr(param.stack_addr), joiner(detached != 0 ? ppu_join_status::detached : ppu_join_status::joinable), entry_func(param.entry), start_time(get_guest_system_time()), ppu_tname(make_single<std::string>(name))
 {
 	gpr[1] = stack_addr + stack_size - ppu_stack_start_offset;
 
@@ -1242,15 +1229,13 @@ void ppu_thread::serialize_common(utils::serial& ar)
 }
 
 ppu_thread::ppu_thread(utils::serial& ar)
-	: cpu_thread(idm::last_id()) // last_id() is showed to constructor on serialization
-	, stack_size(ar)
-	, stack_addr(ar)
-	, joiner(ar.operator ppu_join_status())
-	, entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar))
+    : cpu_thread(idm::last_id()) // last_id() is showed to constructor on serialization
+      ,
+      stack_size(ar), stack_addr(ar), joiner(ar.operator ppu_join_status()), entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar))
 {
 	struct init_pushed
 	{
-		bool pushed = false;
+		bool pushed           = false;
 		atomic_t<bool> inited = false;
 	};
 
@@ -1276,17 +1261,13 @@ ppu_thread::ppu_thread(utils::serial& ar)
 	{
 		if (std::exchange(g_fxo->get<init_pushed>().pushed, true))
 		{
-			cmd_list
-			({
-				{ppu_cmd::ptr_call, 0}, +[](ppu_thread& ppu) -> bool
-				{
-					while (!Emu.IsStopped() && !g_fxo->get<init_pushed>().inited)
-					{
-						thread_ctrl::wait_on(g_fxo->get<init_pushed>().inited, false);
-					}
-					return false;
-				}
-			});
+			cmd_list({{ppu_cmd::ptr_call, 0}, +[](ppu_thread& ppu) -> bool {
+				          while (!Emu.IsStopped() && !g_fxo->get<init_pushed>().inited)
+				          {
+					          thread_ctrl::wait_on(g_fxo->get<init_pushed>().inited, false);
+				          }
+				          return false;
+			          }});
 		}
 		else
 		{
@@ -1294,32 +1275,24 @@ ppu_thread::ppu_thread(utils::serial& ar)
 			g_fxo->get<disable_precomp_t>().disable = true;
 
 			cmd_push({ppu_cmd::initialize, 0});
-			cmd_list
-			({
-				{ppu_cmd::ptr_call, 0}, +[](ppu_thread&) -> bool
-				{
-					auto& inited = g_fxo->get<init_pushed>().inited;
-					inited = true;
-					inited.notify_all();
-					return true;
-				}
-			});
+			cmd_list({{ppu_cmd::ptr_call, 0}, +[](ppu_thread&) -> bool {
+				          auto& inited = g_fxo->get<init_pushed>().inited;
+				          inited       = true;
+				          inited.notify_all();
+				          return true;
+			          }});
 		}
 
 		if (status == PPU_THREAD_STATUS_SLEEP)
 		{
-			cmd_list
-			({
-				{ppu_cmd::ptr_call, 0},
+			cmd_list({{ppu_cmd::ptr_call, 0},
 
-				+[](ppu_thread& ppu) -> bool
-				{
-					ppu.loaded_from_savestate = true;
-					ppu_execute_syscall(ppu, ppu.gpr[11]);
-					ppu.loaded_from_savestate = false;
-					return true;
-				}
-			});
+			    +[](ppu_thread& ppu) -> bool {
+				    ppu.loaded_from_savestate = true;
+				    ppu_execute_syscall(ppu, ppu.gpr[11]);
+				    ppu.loaded_from_savestate = false;
+				    return true;
+			    }});
 
 			lv2_obj::set_future_sleep(this);
 		}
@@ -1357,7 +1330,7 @@ void ppu_thread::save(utils::serial& ar)
 	if (_joiner >= ppu_join_status::max)
 	{
 		// Joining thread should recover this member properly
-		_joiner = ppu_join_status::joinable; 
+		_joiner = ppu_join_status::joinable;
 	}
 
 	if (state & cpu_flag::incomplete_syscall)
@@ -1378,152 +1351,6 @@ void ppu_thread::save(utils::serial& ar)
 	}
 
 	ar(status);
-
-	ar(*ppu_tname.load());
-}
-
-struct disable_precomp_t
-{
-	atomic_t<bool> disable = false;
-};
-
-void ppu_thread::serialize_common(utils::serial& ar)
-{
-	ar(gpr, fpr, cr, fpscr.bits, lr, ctr, vrsave, cia, xer, sat, nj, prio, optional_syscall_state);
-
-	for (v128& reg : vr)
-		ar(reg._bytes);
-}
-
-ppu_thread::ppu_thread(utils::serial& ar)
-	: cpu_thread(idm::last_id()) // last_id() is showed to constructor on serialization
-	, stack_size(ar)
-	, stack_addr(ar)
-	, joiner(ar.operator ppu_join_status())
-	, entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar))
-{
-	struct init_pushed
-	{
-		bool pushed = false;
-		atomic_t<bool> inited = false;
-	};
-
-	serialize_common(ar);
-
-	// Restore jm_mask
-	jm_mask = nj ? 0x7F800000 : 0x7fff'ffff;
-
-	switch (const u32 status = ar.operator u32())
-	{
-	case PPU_THREAD_STATUS_IDLE:
-	{
-		stop_flag_removal_protection = true;
-		break;
-	}
-	case PPU_THREAD_STATUS_RUNNABLE:
-	case PPU_THREAD_STATUS_ONPROC:
-	{
-		lv2_obj::awake(this);
-		[[fallthrough]];
-	}
-	case PPU_THREAD_STATUS_SLEEP:
-	{
-		if (std::exchange(g_fxo->get<init_pushed>().pushed, true))
-		{
-			cmd_list
-			({
-				{ppu_cmd::ptr_call, 0}, +[](ppu_thread& ppu) -> bool
-				{
-					while (!Emu.IsStopped() && !g_fxo->get<init_pushed>().inited)
-					{
-						thread_ctrl::wait_on(g_fxo->get<init_pushed>().inited, false);
-					}
-					return false;
-				}
-			});
-		}
-		else
-		{
-			g_fxo->init<disable_precomp_t>();
-			g_fxo->get<disable_precomp_t>().disable = true;
-
-			cmd_push({ppu_cmd::initialize, 0});
-			cmd_list
-			({
-				{ppu_cmd::ptr_call, 0}, +[](ppu_thread&) -> bool
-				{
-					auto& inited = g_fxo->get<init_pushed>().inited;
-					inited = true;
-					inited.notify_all();
-					return true;
-				}
-			});
-		}
-
-		if (status == PPU_THREAD_STATUS_SLEEP)
-		{
-			cmd_list
-			({
-				{ppu_cmd::ptr_call, 0},
-
-				+[](ppu_thread& ppu) -> bool
-				{
-					ppu.loaded_from_savestate = true;
-					ppu_execute_syscall(ppu, ppu.gpr[11]);
-					ppu.loaded_from_savestate = false;
-					return true;
-				}
-			});
-
-			lv2_obj::set_future_sleep(this);
-		}
-
-		cmd_push({ppu_cmd::cia_call, 0});
-		break;
-	}
-	case PPU_THREAD_STATUS_ZOMBIE:
-	{
-		state += cpu_flag::exit;
-		break;
-	}
-	case PPU_THREAD_STATUS_STOP:
-	{
-		break;
-	}
-	}
-
-	// Trigger the scheduler
-	state += cpu_flag::suspend;
-
-	if (!g_use_rtm)
-	{
-		state += cpu_flag::memory;
-	}
-
-	ppu_tname = make_single<std::string>(ar.operator std::string());
-}
-
-void ppu_thread::save(utils::serial& ar)
-{
-	const u64 entry = std::bit_cast<u64>(entry_func);
-
-	ppu_join_status _joiner = joiner;
-	if (_joiner >= ppu_join_status::max)
-	{
-		// Joining thread should recover this member properly
-		_joiner = ppu_join_status::joinable; 
-	}
-
-	if (incomplete_syscall_flag)
-	{
-		std::memcpy(&gpr[3], syscall_args, sizeof(syscall_args));
-		cia -= 4;
-	}
-
-	ar(stack_size, stack_addr, _joiner, entry);
-	serialize_common(ar);
-
-	ar(lv2_obj::ppu_state(this, false));
 
 	ar(*ppu_tname.load());
 }
@@ -1600,39 +1427,38 @@ cmd64 ppu_thread::cmd_wait()
 
 be_t<u64>* ppu_thread::get_stack_arg(s32 i, u64 align)
 {
-	if (align != 1 && align != 2 && align != 4 && align != 8 && align != 16) fmt::throw_exception("Unsupported alignment: 0x%llx", align);
+	if (align != 1 && align != 2 && align != 4 && align != 8 && align != 16)
+		fmt::throw_exception("Unsupported alignment: 0x%llx", align);
 	return vm::_ptr<u64>(vm::cast((gpr[1] + 0x30 + 0x8 * (i - 1)) & (0 - align)));
 }
 
 void ppu_thread::fast_call(u32 addr, u64 rtoc)
 {
-	const auto old_cia = cia;
+	const auto old_cia  = cia;
 	const auto old_rtoc = gpr[2];
-	const auto old_lr = lr;
+	const auto old_lr   = lr;
 	const auto old_func = current_function;
-	const auto old_fmt = g_tls_log_prefix;
+	const auto old_fmt  = g_tls_log_prefix;
 
 	interrupt_thread_executing = true;
-	cia = addr;
-	gpr[2] = rtoc;
-	lr = g_fxo->get<ppu_function_manager>().func_addr(1) + 4; // HLE stop address
-	current_function = nullptr;
+	cia                        = addr;
+	gpr[2]                     = rtoc;
+	lr                         = g_fxo->get<ppu_function_manager>().func_addr(1) + 4; // HLE stop address
+	current_function           = nullptr;
 
 	if (std::exchange(loaded_from_savestate, false))
 	{
 		lr = old_lr;
 	}
 
-	g_tls_log_prefix = []
-	{
+	g_tls_log_prefix = [] {
 		const auto _this = static_cast<ppu_thread*>(get_current_cpu_thread());
 
 		static thread_local shared_ptr<std::string> name_cache;
 
 		if (!_this->ppu_tname.is_equal(name_cache)) [[unlikely]]
 		{
-			_this->ppu_tname.peek_op([&](const shared_ptr<std::string>& ptr)
-			{
+			_this->ppu_tname.peek_op([&](const shared_ptr<std::string>& ptr) {
 				if (ptr != name_cache)
 				{
 					name_cache = ptr;
@@ -1650,8 +1476,7 @@ void ppu_thread::fast_call(u32 addr, u64 rtoc)
 		return fmt::format("PPU[0x%x] Thread (%s) [0x%08x]", _this->id, *name_cache.get(), cia);
 	};
 
-	auto at_ret = [&]()
-	{
+	auto at_ret = [&]() {
 		if (std::uncaught_exceptions())
 		{
 			cpu_on_stop();
@@ -1664,9 +1489,9 @@ void ppu_thread::fast_call(u32 addr, u64 rtoc)
 				ppu_log.error("HLE callstack savestate is not implemented!");
 			}
 
-			cia = old_cia;
+			cia    = old_cia;
 			gpr[2] = old_rtoc;
-			lr = old_lr;
+			lr     = old_lr;
 		}
 
 		current_function = old_func;
@@ -1685,11 +1510,10 @@ std::pair<vm::addr_t, u32> ppu_thread::stack_push(u32 size, u32 align_v)
 		ppu_thread& context = static_cast<ppu_thread&>(*cpu);
 
 		const u32 old_pos = vm::cast(context.gpr[1]);
-		context.gpr[1] -= size; // room minimal possible size
+		context.gpr[1] -= size;                // room minimal possible size
 		context.gpr[1] &= ~(u64{align_v} - 1); // fix stack alignment
 
-		auto is_stack = [&](u64 addr)
-		{
+		auto is_stack = [&](u64 addr) {
 			return addr >= context.stack_addr && addr < context.stack_addr + context.stack_size;
 		};
 
@@ -1797,7 +1621,7 @@ static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 	}
 
 	// Always load aligned 64-bit value
-	auto& data = vm::_ref<const atomic_be_t<u64>>(addr & -8);
+	auto& data         = vm::_ref<const atomic_be_t<u64>>(addr & -8);
 	const u64 size_off = (sizeof(T) * 8) & 63;
 	const u64 data_off = (addr & 7) * 8;
 
@@ -1808,8 +1632,7 @@ static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 	if (const s32 max = g_cfg.core.ppu_128_reservations_loop_max_length)
 	{
 		// If we use it in HLE it means we want the accurate version
-		ppu.use_full_rdata = max < 0 || ppu.current_function || [&]()
-		{
+		ppu.use_full_rdata = max < 0 || ppu.current_function || [&]() {
 			const u32 cia = ppu.cia;
 
 			if ((cia & 0xffff) >= 0x10000u - max * 4)
@@ -1822,10 +1645,10 @@ static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 
 			// Search for STWCX or STDCX nearby (LDARX-STWCX and LWARX-STDCX loops will use accurate 128-byte reservations)
 			constexpr u32 store_cond = stx::se_storage<u32>::swap(sizeof(T) == 8 ? 0x7C00012D : 0x7C0001AD);
-			constexpr u32 mask = stx::se_storage<u32>::swap(0xFC0007FF);
+			constexpr u32 mask       = stx::se_storage<u32>::swap(0xFC0007FF);
 
 			const auto store_vec = v128::from32p(store_cond);
-			const auto mask_vec = v128::from32p(mask);
+			const auto mask_vec  = v128::from32p(mask);
 
 			s32 i = 2;
 
@@ -1874,8 +1697,8 @@ static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 
 		if (rdata == data.load())
 		{
-			ppu.rtime = ppu.last_ftime;
-			ppu.raddr = ppu.last_faddr;
+			ppu.rtime      = ppu.last_ftime;
+			ppu.raddr      = ppu.last_faddr;
 			ppu.last_ftime = 0;
 			return static_cast<T>(rdata << data_off >> size_off);
 		}
@@ -1922,8 +1745,7 @@ extern u64 ppu_ldarx(ppu_thread& ppu, u32 addr)
 	return ppu_load_acquire_reservation<u64>(ppu, addr);
 }
 
-const auto ppu_stcx_accurate_tx = build_function_asm<u64(*)(u32 raddr, u64 rtime, const void* _old, u64 _new)>([](asmjit::X86Assembler& c, auto& args)
-{
+const auto ppu_stcx_accurate_tx = build_function_asm<u64 (*)(u32 raddr, u64 rtime, const void* _old, u64 _new)>([](asmjit::X86Assembler& c, auto& args) {
 	using namespace asmjit;
 
 	Label fall = c.newLabel();
@@ -1995,8 +1817,7 @@ const auto ppu_stcx_accurate_tx = build_function_asm<u64(*)(u32 raddr, u64 rtime
 	build_get_tsc(c, stamp0);
 
 	// Begin transaction
-	Label tx0 = build_transaction_enter(c, fall, [&]()
-	{
+	Label tx0 = build_transaction_enter(c, fall, [&]() {
 		build_get_tsc(c, stamp1);
 		c.sub(stamp1, stamp0);
 		c.xor_(x86::eax, x86::eax);
@@ -2115,8 +1936,7 @@ const auto ppu_stcx_accurate_tx = build_function_asm<u64(*)(u32 raddr, u64 rtime
 	build_get_tsc(c, stamp1);
 	c.sub(stamp1, x86::rax);
 
-	Label tx1 = build_transaction_enter(c, fall2, [&]()
-	{
+	Label tx1 = build_transaction_enter(c, fall2, [&]() {
 		build_get_tsc(c);
 		c.sub(x86::rax, stamp1);
 		c.cmp(x86::rax, x86::qword_ptr(reinterpret_cast<u64>(&g_rtm_tx_limit2)));
@@ -2272,8 +2092,8 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 		fmt::throw_exception("PPU %s: Unaligned address: 0x%08x", sizeof(T) == 4 ? "STWCX" : "STDCX", addr);
 	}
 
-	auto& data = vm::_ref<atomic_be_t<u64>>(addr & -8);
-	auto& res = vm::reservation_acquire(addr);
+	auto& data      = vm::_ref<atomic_be_t<u64>>(addr & -8);
+	auto& res       = vm::reservation_acquire(addr);
 	const u64 rtime = ppu.rtime;
 
 	be_t<u64> old_data = 0;
@@ -2314,184 +2134,179 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 		return false;
 	}
 
-	if ([&]()
-	{
-		if (ppu.use_full_rdata) [[unlikely]]
-		{
-			if (g_use_rtm) [[likely]]
-			{
-				switch (u64 count = ppu_stcx_accurate_tx(addr & -8, rtime, ppu.rdata, std::bit_cast<u64>(new_data)))
-				{
-				case umax:
-				{
-					auto& all_data = *vm::get_super_ptr<spu_rdata_t>(addr & -128);
-					auto& sdata = *vm::get_super_ptr<atomic_be_t<u64>>(addr & -8);
+	if ([&]() {
+		    if (ppu.use_full_rdata) [[unlikely]]
+		    {
+			    if (g_use_rtm) [[likely]]
+			    {
+				    switch (u64 count = ppu_stcx_accurate_tx(addr & -8, rtime, ppu.rdata, std::bit_cast<u64>(new_data)))
+				    {
+				    case umax:
+				    {
+					    auto& all_data = *vm::get_super_ptr<spu_rdata_t>(addr & -128);
+					    auto& sdata    = *vm::get_super_ptr<atomic_be_t<u64>>(addr & -8);
 
-					const bool ok = cpu_thread::suspend_all<+3>(&ppu, {all_data, all_data + 64, &res}, [&]
-					{
-						if ((res & -128) == rtime && cmp_rdata(ppu.rdata, all_data))
-						{
-							sdata.release(new_data);
-							res += 127;
-							return true;
-						}
+					    const bool ok = cpu_thread::suspend_all<+3>(&ppu, {all_data, all_data + 64, &res}, [&] {
+						    if ((res & -128) == rtime && cmp_rdata(ppu.rdata, all_data))
+						    {
+							    sdata.release(new_data);
+							    res += 127;
+							    return true;
+						    }
 
-						mov_rdata_nt(ppu.rdata, all_data);
-						res -= 1;
-						return false;
-					});
+						    mov_rdata_nt(ppu.rdata, all_data);
+						    res -= 1;
+						    return false;
+					    });
 
-					if (ok)
-					{
-						break;
-					}
+					    if (ok)
+					    {
+						    break;
+					    }
 
-					ppu.last_ftime = -1;
-					[[fallthrough]];
-				}
-				case 0:
-				{
-					if (ppu.last_faddr == addr)
-					{
-						ppu.last_fail++;
-					}
+					    ppu.last_ftime = -1;
+					    [[fallthrough]];
+				    }
+				    case 0:
+				    {
+					    if (ppu.last_faddr == addr)
+					    {
+						    ppu.last_fail++;
+					    }
 
-					if (ppu.last_ftime != umax)
-					{
-						ppu.last_faddr = 0;
-						return false;
-					}
+					    if (ppu.last_ftime != umax)
+					    {
+						    ppu.last_faddr = 0;
+						    return false;
+					    }
 
-					utils::prefetch_read(ppu.rdata);
-					utils::prefetch_read(ppu.rdata + 64);
-					ppu.last_faddr = addr;
-					ppu.last_ftime = res.load() & -128;
-					ppu.last_ftsc = __rdtsc();
-					return false;
-				}
-				default:
-				{
-					if (count > 20000 && g_cfg.core.perf_report) [[unlikely]]
-					{
-						perf_log.warning(u8"STCX: took too long: %.3fÂµs (%u c)", count / (utils::get_tsc_freq() / 1000'000.), count);
-					}
+					    utils::prefetch_read(ppu.rdata);
+					    utils::prefetch_read(ppu.rdata + 64);
+					    ppu.last_faddr = addr;
+					    ppu.last_ftime = res.load() & -128;
+					    ppu.last_ftsc  = __rdtsc();
+					    return false;
+				    }
+				    default:
+				    {
+					    if (count > 20000 && g_cfg.core.perf_report) [[unlikely]]
+					    {
+						    perf_log.warning(u8"STCX: took too long: %.3fÂµs (%u c)", count / (utils::get_tsc_freq() / 1000'000.), count);
+					    }
 
-					break;
-				}
-				}
+					    break;
+				    }
+				    }
 
-				if (ppu.last_faddr == addr)
-				{
-					ppu.last_succ++;
-				}
+				    if (ppu.last_faddr == addr)
+				    {
+					    ppu.last_succ++;
+				    }
 
-				ppu.last_faddr = 0;
-				return true;
-			}
+				    ppu.last_faddr = 0;
+				    return true;
+			    }
 
-			auto [_oldd, _ok] = res.fetch_op([&](u64& r)
-			{
-				if ((r & -128) != rtime || (r & 127))
-				{
-					return false;
-				}
+			    auto [_oldd, _ok] = res.fetch_op([&](u64& r) {
+				    if ((r & -128) != rtime || (r & 127))
+				    {
+					    return false;
+				    }
 
-				r += vm::rsrv_unique_lock;
-				return true;
-			});
+				    r += vm::rsrv_unique_lock;
+				    return true;
+			    });
 
-			if (!_ok)
-			{
-				// Already locked or updated: give up
-				return false;
-			}
+			    if (!_ok)
+			    {
+				    // Already locked or updated: give up
+				    return false;
+			    }
 
-			// Align address: we do not need the lower 7 bits anymore
-			addr &= -128;
+			    // Align address: we do not need the lower 7 bits anymore
+			    addr &= -128;
 
-			// Cache line data
-			//auto& cline_data = vm::_ref<spu_rdata_t>(addr);
+			    // Cache line data
+			    //auto& cline_data = vm::_ref<spu_rdata_t>(addr);
 
-			data += 0;
-			rsx::reservation_lock rsx_lock(addr, 128);
+			    data += 0;
+			    rsx::reservation_lock rsx_lock(addr, 128);
 
-			auto& super_data = *vm::get_super_ptr<spu_rdata_t>(addr);
-			const bool success = [&]()
-			{
-				// Full lock (heavyweight)
-				// TODO: vm::check_addr
-				vm::writer_lock lock(addr);
+			    auto& super_data   = *vm::get_super_ptr<spu_rdata_t>(addr);
+			    const bool success = [&]() {
+				    // Full lock (heavyweight)
+				    // TODO: vm::check_addr
+				    vm::writer_lock lock(addr);
 
-				if (cmp_rdata(ppu.rdata, super_data))
-				{
-					data.release(new_data);
-					res += 64;
-					return true;
-				}
+				    if (cmp_rdata(ppu.rdata, super_data))
+				    {
+					    data.release(new_data);
+					    res += 64;
+					    return true;
+				    }
 
-				res -= 64;
-				return false;
-			}();
+				    res -= 64;
+				    return false;
+			    }();
 
-			return success;
-		}
+			    return success;
+		    }
 
-		if (new_data == old_data)
-		{
-			ppu.last_faddr = 0;
-			return res.compare_and_swap_test(rtime, rtime + 128);
-		}
+		    if (new_data == old_data)
+		    {
+			    ppu.last_faddr = 0;
+			    return res.compare_and_swap_test(rtime, rtime + 128);
+		    }
 
-		// Aligned 8-byte reservations will be used here
-		addr &= -8;
+		    // Aligned 8-byte reservations will be used here
+		    addr &= -8;
 
-		const u64 lock_bits = g_cfg.core.spu_accurate_dma ? vm::rsrv_unique_lock : 1;
+		    const u64 lock_bits = g_cfg.core.spu_accurate_dma ? vm::rsrv_unique_lock : 1;
 
-		auto [_oldd, _ok] = res.fetch_op([&](u64& r)
-		{
-			if ((r & -128) != rtime || (r & 127))
-			{
-				return false;
-			}
+		    auto [_oldd, _ok] = res.fetch_op([&](u64& r) {
+			    if ((r & -128) != rtime || (r & 127))
+			    {
+				    return false;
+			    }
 
-			// Despite using shared lock, doesn't allow other shared locks (TODO)
-			r += lock_bits;
-			return true;
-		});
+			    // Despite using shared lock, doesn't allow other shared locks (TODO)
+			    r += lock_bits;
+			    return true;
+		    });
 
-		// Give up if reservation has been locked or updated
-		if (!_ok)
-		{
-			ppu.last_faddr = 0;
-			return false;
-		}
+		    // Give up if reservation has been locked or updated
+		    if (!_ok)
+		    {
+			    ppu.last_faddr = 0;
+			    return false;
+		    }
 
-		// Store previous value in old_data on failure
-		if (data.compare_exchange(old_data, new_data))
-		{
-			res += 128 - lock_bits;
-			return true;
-		}
+		    // Store previous value in old_data on failure
+		    if (data.compare_exchange(old_data, new_data))
+		    {
+			    res += 128 - lock_bits;
+			    return true;
+		    }
 
-		const u64 old_rtime = res.fetch_sub(lock_bits);
+		    const u64 old_rtime = res.fetch_sub(lock_bits);
 
-		// TODO: disabled with this setting on, since it's dangerous to mix
-		if (!g_cfg.core.ppu_128_reservations_loop_max_length)
-		{
-			// Store old_data on failure
-			if (ppu.last_faddr == addr)
-			{
-				ppu.last_fail++;
-			}
+		    // TODO: disabled with this setting on, since it's dangerous to mix
+		    if (!g_cfg.core.ppu_128_reservations_loop_max_length)
+		    {
+			    // Store old_data on failure
+			    if (ppu.last_faddr == addr)
+			    {
+				    ppu.last_fail++;
+			    }
 
-			ppu.last_faddr = addr;
-			ppu.last_ftime = old_rtime & -128;
-			ppu.last_ftsc = __rdtsc();
-			std::memcpy(&ppu.rdata[addr & 0x78], &old_data, 8);
-		}
+			    ppu.last_faddr = addr;
+			    ppu.last_ftime = old_rtime & -128;
+			    ppu.last_ftsc  = __rdtsc();
+			    std::memcpy(&ppu.rdata[addr & 0x78], &old_data, 8);
+		    }
 
-		return false;
-	}())
+		    return false;
+	    }())
 	{
 		res.notify_all(-128);
 
@@ -2554,7 +2369,7 @@ namespace
 			map.erase(found);
 		}
 	};
-}
+} // namespace
 #endif
 
 namespace
@@ -2567,9 +2382,7 @@ namespace
 		u64 m_pos;
 
 		explicit file_view(fs::file&& _file, u64 offset)
-			: m_file(std::move(_file))
-			, m_off(offset)
-			, m_pos(0)
+		    : m_file(std::move(_file)), m_off(offset), m_pos(0)
 		{
 		}
 
@@ -2606,9 +2419,10 @@ namespace
 		u64 seek(s64 offset, fs::seek_mode whence) override
 		{
 			const s64 new_pos =
-				whence == fs::seek_set ? offset :
-				whence == fs::seek_cur ? offset + m_pos :
-				whence == fs::seek_end ? offset + size() : -1;
+			    whence == fs::seek_set ? offset :
+			    whence == fs::seek_cur ? offset + m_pos :
+			    whence == fs::seek_end ? offset + size() :
+                                         -1;
 
 			if (new_pos < 0)
 			{
@@ -2625,7 +2439,7 @@ namespace
 			return m_file.size();
 		}
 	};
-}
+} // namespace
 
 extern fs::file make_file_view(fs::file&& _file, u64 offset)
 {
@@ -2697,7 +2511,7 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 
 	// Map fixed address executables area, fake overlay support
 	const bool had_ovl = !vm::map(0x3000'0000, 0x1000'0000, 0x202).operator bool();
-	const u32 ppc_seg = std::exchange(g_ps3_process_info.ppc_seg, 0x3);
+	const u32 ppc_seg  = std::exchange(g_ps3_process_info.ppc_seg, 0x3);
 
 	std::vector<std::pair<std::string, u64>> file_queue;
 	file_queue.reserve(2000);
@@ -2734,8 +2548,7 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 			std::string upper = fmt::to_upper(entry.name);
 
 			// Skip already loaded modules or HLEd ones
-			auto is_ignored = [&](s64 offset) -> bool
-			{
+			auto is_ignored = [&](s64 offset) -> bool {
 				if (dir_queue[i] != firmware_sprx_path)
 				{
 					return false;
@@ -2743,10 +2556,9 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 
 				if (loaded_modules)
 				{
-					if (std::any_of(loaded_modules->begin(), loaded_modules->end(), [&](ppu_module* obj)
-					{
-						return obj->name == entry.name;
-					}))
+					if (std::any_of(loaded_modules->begin(), loaded_modules->end(), [&](ppu_module* obj) {
+						    return obj->name == entry.name;
+					    }))
 					{
 						return true;
 					}
@@ -2786,7 +2598,7 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 			if (upper.ends_with(".SELF"))
 			{
 				// Get full path
-				file_queue.emplace_back(dir_queue[i] + entry.name,  0);
+				file_queue.emplace_back(dir_queue[i] + entry.name, 0);
 				continue;
 			}
 
@@ -2842,8 +2654,7 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 
 	shared_mutex sprx_mtx, ovl_mtx;
 
-	named_thread_group workers("SPRX Worker ", std::min<u32>(utils::get_thread_count(), ::size32(file_queue)), [&]
-	{
+	named_thread_group workers("SPRX Worker ", std::min<u32>(utils::get_thread_count(), ::size32(file_queue)), [&] {
 		// Set low priority
 		thread_ctrl::scoped_priority low_prio(-1);
 
@@ -2994,8 +2805,7 @@ extern void ppu_initialize()
 	// If empty we have no indication for firmware cache state, check everything
 	bool compile_fw = true;
 
-	idm::select<lv2_obj, lv2_prx>([&](u32, lv2_prx& _module)
-	{
+	idm::select<lv2_obj, lv2_prx>([&](u32, lv2_prx& _module) {
 		if (!_module.path.starts_with(firmware_sprx_path))
 		{
 			// Postpone testing
@@ -3005,8 +2815,7 @@ extern void ppu_initialize()
 		module_list.emplace_back(&_module);
 	});
 
-	idm::select<lv2_obj, lv2_overlay>([&](u32, lv2_overlay& _module)
-	{
+	idm::select<lv2_obj, lv2_overlay>([&](u32, lv2_overlay& _module) {
 		module_list.emplace_back(&_module);
 	});
 
@@ -3096,31 +2905,29 @@ bool ppu_initialize(const ppu_module& info, bool check_only)
 	}
 
 	// Link table
-	static const std::unordered_map<std::string, u64> s_link_table = []()
-	{
-		std::unordered_map<std::string, u64> link_table
-		{
-			{ "__trap", reinterpret_cast<u64>(&ppu_trap) },
-			{ "__error", reinterpret_cast<u64>(&ppu_error) },
-			{ "__check", reinterpret_cast<u64>(&ppu_check) },
-			{ "__trace", reinterpret_cast<u64>(&ppu_trace) },
-			{ "__syscall", reinterpret_cast<u64>(ppu_execute_syscall) },
-			{ "__get_tb", reinterpret_cast<u64>(get_timebased_time) },
-			{ "__lwarx", reinterpret_cast<u64>(ppu_lwarx) },
-			{ "__ldarx", reinterpret_cast<u64>(ppu_ldarx) },
-			{ "__stwcx", reinterpret_cast<u64>(ppu_stwcx) },
-			{ "__stdcx", reinterpret_cast<u64>(ppu_stdcx) },
-			{ "__vexptefp", reinterpret_cast<u64>(sse_exp2_ps) },
-			{ "__vlogefp", reinterpret_cast<u64>(sse_log2_ps) },
-			{ "__lvsl", reinterpret_cast<u64>(sse_altivec_lvsl) },
-			{ "__lvsr", reinterpret_cast<u64>(sse_altivec_lvsr) },
-			{ "__lvlx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_lvlx) : reinterpret_cast<u64>(sse_cellbe_lvlx_v0) },
-			{ "__lvrx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_lvrx) : reinterpret_cast<u64>(sse_cellbe_lvrx_v0) },
-			{ "__stvlx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_stvlx) : reinterpret_cast<u64>(sse_cellbe_stvlx_v0) },
-			{ "__stvrx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_stvrx) : reinterpret_cast<u64>(sse_cellbe_stvrx_v0) },
-			{ "__dcbz", reinterpret_cast<u64>(+[](u32 addr){ alignas(64) static constexpr u8 z[128]{}; do_cell_atomic_128_store(addr, z); }) },
-			{ "__resupdate", reinterpret_cast<u64>(vm::reservation_update) },
-			{ "__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback) },
+	static const std::unordered_map<std::string, u64> s_link_table = []() {
+		std::unordered_map<std::string, u64> link_table{
+		    {"__trap", reinterpret_cast<u64>(&ppu_trap)},
+		    {"__error", reinterpret_cast<u64>(&ppu_error)},
+		    {"__check", reinterpret_cast<u64>(&ppu_check)},
+		    {"__trace", reinterpret_cast<u64>(&ppu_trace)},
+		    {"__syscall", reinterpret_cast<u64>(ppu_execute_syscall)},
+		    {"__get_tb", reinterpret_cast<u64>(get_timebased_time)},
+		    {"__lwarx", reinterpret_cast<u64>(ppu_lwarx)},
+		    {"__ldarx", reinterpret_cast<u64>(ppu_ldarx)},
+		    {"__stwcx", reinterpret_cast<u64>(ppu_stwcx)},
+		    {"__stdcx", reinterpret_cast<u64>(ppu_stdcx)},
+		    {"__vexptefp", reinterpret_cast<u64>(sse_exp2_ps)},
+		    {"__vlogefp", reinterpret_cast<u64>(sse_log2_ps)},
+		    {"__lvsl", reinterpret_cast<u64>(sse_altivec_lvsl)},
+		    {"__lvsr", reinterpret_cast<u64>(sse_altivec_lvsr)},
+		    {"__lvlx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_lvlx) : reinterpret_cast<u64>(sse_cellbe_lvlx_v0)},
+		    {"__lvrx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_lvrx) : reinterpret_cast<u64>(sse_cellbe_lvrx_v0)},
+		    {"__stvlx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_stvlx) : reinterpret_cast<u64>(sse_cellbe_stvlx_v0)},
+		    {"__stvrx", s_use_ssse3 ? reinterpret_cast<u64>(sse_cellbe_stvrx) : reinterpret_cast<u64>(sse_cellbe_stvrx_v0)},
+		    {"__dcbz", reinterpret_cast<u64>(+[](u32 addr) { alignas(64) static constexpr u8 z[128]{}; do_cell_atomic_128_store(addr, z); })},
+		    {"__resupdate", reinterpret_cast<u64>(vm::reservation_update)},
+		    {"__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback)},
 		};
 
 		for (u64 index = 0; index < 1024; index++)
@@ -3224,7 +3031,7 @@ bool ppu_initialize(const ppu_module& info, bool check_only)
 		part.funcs.reserve(16000);
 
 		// Overall block size in bytes
-		usz bsize = 0;
+		usz bsize  = 0;
 		usz bcount = 0;
 
 		while (fpos < info.funcs.size())
@@ -3291,7 +3098,7 @@ bool ppu_initialize(const ppu_module& info, bool check_only)
 					}
 
 					// Find relevant relocations
-					auto low = std::lower_bound(part.relocs.cbegin(), part.relocs.cend(), block.first);
+					auto low  = std::lower_bound(part.relocs.cbegin(), part.relocs.cend(), block.first);
 					auto high = std::lower_bound(low, part.relocs.cend(), block.first + block.second);
 					auto addr = block.first;
 
@@ -3463,8 +3270,7 @@ bool ppu_initialize(const ppu_module& info, bool check_only)
 		// Prevent watchdog thread from terminating
 		g_watchdog_hold_ctr++;
 
-		named_thread_group threads(fmt::format("PPUW.%u.", ++g_fxo->get<thread_index_allocator>().index), thread_count, [&]()
-		{
+		named_thread_group threads(fmt::format("PPUW.%u.", ++g_fxo->get<thread_index_allocator>().index), thread_count, [&]() {
 			// Set low priority
 			thread_ctrl::scoped_priority low_prio(-1);
 
@@ -3536,10 +3342,11 @@ bool ppu_initialize(const ppu_module& info, bool check_only)
 		// Get and install function addresses
 		for (const auto& func : info.funcs)
 		{
-			if (!func.size) continue;
+			if (!func.size)
+				continue;
 
 			const auto name = fmt::format("__0x%x", func.addr - reloc);
-			const u64 addr = ensure(jit->get(name));
+			const u64 addr  = ensure(jit->get(name));
 			jit_mod.funcs.emplace_back(reinterpret_cast<ppu_function_t>(addr));
 			ppu_ref(func.addr) = (addr & 0x7fff'ffff'ffffu) | (ppu_ref(func.addr) & ~0x7fff'ffff'ffffu);
 
@@ -3556,9 +3363,10 @@ bool ppu_initialize(const ppu_module& info, bool check_only)
 		// Locate existing functions
 		for (const auto& func : info.funcs)
 		{
-			if (!func.size) continue;
+			if (!func.size)
+				continue;
 
-			const u64 addr = ensure(reinterpret_cast<uptr>(jit_mod.funcs[index++]));
+			const u64 addr     = ensure(reinterpret_cast<uptr>(jit_mod.funcs[index++]));
 			ppu_ref(func.addr) = (addr & 0x7fff'ffff'ffffu) | (ppu_ref(func.addr) & ~0x7fff'ffff'ffffu);
 
 			if (g_cfg.core.ppu_debug)
@@ -3591,14 +3399,15 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module& module_part, co
 
 	// Define some types
 	const auto _func = FunctionType::get(translator.get_type<void>(), {
-		translator.get_type<u8*>(), // Exec base
-		translator.GetContextType()->getPointerTo(), // PPU context
-		translator.get_type<u64>(), // Segment address (for PRX)
-		translator.get_type<u8*>(), // Memory base
-		translator.get_type<u64>(), // r0
-		translator.get_type<u64>(), // r1
-		translator.get_type<u64>(), // r2
-		}, false);
+	                                                                      translator.get_type<u8*>(),                  // Exec base
+	                                                                      translator.GetContextType()->getPointerTo(), // PPU context
+	                                                                      translator.get_type<u64>(),                  // Segment address (for PRX)
+	                                                                      translator.get_type<u8*>(),                  // Memory base
+	                                                                      translator.get_type<u64>(),                  // r0
+	                                                                      translator.get_type<u64>(),                  // r1
+	                                                                      translator.get_type<u64>(),                  // r2
+	                                                                  },
+	    false);
 
 	// Initialize function list
 	for (const auto& func : module_part.funcs)
@@ -3682,7 +3491,7 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module& module_part, co
 		{
 			out.flush();
 			ppu_log.error("LLVM: Verification failed for %s:\n%s", obj_name, result);
-			Emu.CallAfter([]{ Emu.Stop(); });
+			Emu.CallAfter([] { Emu.Stop(); });
 			return;
 		}
 
