@@ -49,7 +49,10 @@ namespace rsx
 
 			// Arbitrary r/w flags, use with caution.
 			memory_write = 8,
-			memory_read = 16
+			memory_read = 16,
+
+			// Not r/w but signifies a GPU reference to this object.
+			gpu_reference = 32
 		};
 
 	private:
@@ -103,7 +106,7 @@ namespace rsx
 	// Defines how the underlying PS3-visible memory backed by a texture is accessed
 	namespace format_class_
 	{
-		// TODO: Remove when enum import is supported by GCC
+		// TODO: Remove when enum import is supported by clang
 		enum format_class : u8
 		{
 			RSX_FORMAT_CLASS_UNDEFINED = 0,
@@ -130,6 +133,7 @@ namespace rsx
 		u64 surface_cache_tag = 0;
 		f32 scale_x = 1.f;
 		f32 scale_y = 1.f;
+		f32 scale_z = 1.f;
 
 		virtual ~sampled_image_descriptor_base() = default;
 		virtual u32 encoded_component_map() const = 0;

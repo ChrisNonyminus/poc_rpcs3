@@ -26,7 +26,7 @@ std::shared_ptr<void> lv2_rwlock::load(utils::serial& ar)
 void lv2_rwlock::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(lv2_sync);
-	ar(protocol, key, name, owner & -2);
+	ar(protocol, key, name, owner);
 }
 
 error_code sys_rwlock_create(ppu_thread& ppu, vm::ptr<u32> rw_lock_id, vm::ptr<sys_rwlock_attribute_t> attr)
@@ -164,7 +164,7 @@ error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 				break;
 			}
 
-			ppu.incomplete_syscall_flag = true;
+			ppu.state += cpu_incomplete_syscall;
 			break;
 		}
 
@@ -290,9 +290,9 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 		{
 			if (const auto cpu = rwlock->schedule<ppu_thread>(rwlock->wq, rwlock->protocol))
 			{
-				if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.incomplete_syscall_flag = true;
+					ppu.state += cpu_incomplete_syscall;
 					ppu.state += cpu_flag::exit;
 					return {};
 				}
@@ -391,7 +391,7 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 				break;
 			}
 
-			ppu.incomplete_syscall_flag = true;
+			ppu.state += cpu_incomplete_syscall;
 			break;
 		}
 
@@ -509,9 +509,9 @@ error_code sys_rwlock_wunlock(ppu_thread& ppu, u32 rw_lock_id)
 
 		if (auto cpu = rwlock->schedule<ppu_thread>(rwlock->wq, rwlock->protocol))
 		{
-			if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+			if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 			{
-				ppu.incomplete_syscall_flag = true;
+				ppu.state += cpu_incomplete_syscall;
 				ppu.state += cpu_flag::exit;
 				return {};
 			}

@@ -643,6 +643,8 @@ public:
 	spu_thread(const spu_thread&) = delete;
 	spu_thread& operator=(const spu_thread&) = delete;
 
+	using cpu_thread::operator=;
+
 	spu_thread(utils::serial& ar, lv2_spu_group* group = nullptr);
 	void serialize_common(utils::serial& ar);
 	void save(utils::serial& ar);
@@ -772,8 +774,9 @@ public:
 	u64 last_fail = 0;
 	u64 last_succ = 0;
 
+	std::vector<mfc_cmd_dump> mfc_history;
 	u64 mfc_dump_idx = 0;
-	static constexpr u32 max_mfc_dump_idx = SPU_LS_SIZE / sizeof(mfc_cmd_dump);
+	static constexpr u32 max_mfc_dump_idx = 2048;
 
 	std::array<v128, 0x4000> stack_mirror; // Return address information
 
@@ -783,7 +786,6 @@ public:
 	atomic_t<u8> debugger_float_mode = 0;
 
 	bool stop_flag_removal_protection = false;
-	bool incomplete_syscall_flag = false;
 
 	void push_snr(u32 number, u32 value);
 	static void do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8* ls);
@@ -861,6 +863,14 @@ public:
 
 		operator std::string() const;
 	} thread_name{ this };
+
+	// For lv2_obj::schedule<spu_thread>
+	const struct priority_t
+	{
+		const spu_thread* _this;
+
+		operator s32() const;
+	} prio{ this };
 };
 
 class spu_function_logger

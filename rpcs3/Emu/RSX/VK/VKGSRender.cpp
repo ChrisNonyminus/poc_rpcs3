@@ -481,7 +481,7 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 	}
 
 	const auto& memory_map = m_device->get_memory_mapping();
-	null_buffer = std::make_unique<vk::buffer>(*m_device, 32, memory_map.device_local, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, 0);
+	null_buffer = std::make_unique<vk::buffer>(*m_device, 32, memory_map.device_local, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
 	null_buffer_view = std::make_unique<vk::buffer_view>(*m_device, null_buffer->value, VK_FORMAT_R8_UINT, 0, 32);
 
 	vk::initialize_compiler_context();
@@ -501,7 +501,7 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 	else
 		m_vertex_cache = std::make_unique<vk::weak_vertex_cache>();
 
-	m_shaders_cache = std::make_unique<vk::shader_cache>(*m_prog_buffer, "vulkan", "v1.91");
+	m_shaders_cache = std::make_unique<vk::shader_cache>(*m_prog_buffer, "vulkan", "v1.92");
 
 	open_command_buffer();
 
@@ -570,6 +570,12 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 				rsx_log.error("Older NVIDIA cards do not meet requirements for asynchronous compute due to some driver fakery.");
 				backend_config.supports_asynchronous_compute = false;
 			}
+			else // Workaround. Remove once the async decoder is re-written
+			{
+				// NVIDIA 471 and newer are completely borked. Queue priority is not observed and any queue waiting on another just causes deadlock.
+				rsx_log.error("NVIDIA GPUs are incompatible with the current implementation of asynchronous texture decoding.");
+				backend_config.supports_asynchronous_compute = false;
+			}
 			break;
 #if !defined(_WIN32)
 			// Anything running on AMDGPU kernel driver will not work due to the check for fd-backed memory allocations
@@ -577,7 +583,7 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 		case vk::driver_vendor::AMD:
 #if !defined(__linux__)
 			// Intel chipsets would fail on BSD in most cases and DRM_IOCTL_i915_GEM_USERPTR unimplemented
-		case vk::driver_vendor::INTEL:
+		case vk::driver_vendor::ANV:
 #endif
 			if (backend_config.supports_passthrough_dma)
 			{
@@ -617,10 +623,10 @@ VKGSRender::~VKGSRender()
 	// Clear flush requests
 	m_flush_requests.clear_pending_flag();
 
-	//Texture cache
+	// Texture cache
 	m_texture_cache.destroy();
 
-	//Shaders
+	// Shaders
 	vk::destroy_pipe_compiler();      // Ensure no pending shaders being compiled
 	vk::finalize_compiler_context();  // Shut down the glslang compiler
 	m_prog_buffer->clear();           // Delete shader objects
@@ -630,10 +636,13 @@ VKGSRender::~VKGSRender()
 	m_volatile_attribute_storage.reset();
 	m_vertex_layout_storage.reset();
 
-	//Global resources
+	// Upscaler (references some global resources)
+	m_upscaler.reset();
+
+	// Global resources
 	vk::destroy_global_resources();
 
-	//Heaps
+	// Heaps
 	m_attrib_ring_info.destroy();
 	m_fragment_env_ring_info.destroy();
 	m_vertex_env_ring_info.destroy();
@@ -647,13 +656,13 @@ VKGSRender::~VKGSRender()
 	m_fragment_instructions_buffer.destroy();
 	m_raster_env_ring_info.destroy();
 
-	//Fallback bindables
+	// Fallback bindables
 	null_buffer.reset();
 	null_buffer_view.reset();
 
 	if (m_current_frame == &m_aux_frame_context)
 	{
-		//Return resources back to the owner
+		// Return resources back to the owner
 		m_current_frame = &frame_context_storage[m_current_queue_index];
 		m_current_frame->swap_storage(m_aux_frame_context);
 		m_current_frame->grab_resources(m_aux_frame_context);
@@ -661,7 +670,7 @@ VKGSRender::~VKGSRender()
 
 	m_aux_frame_context.buffer_views_to_clean.clear();
 
-	//NOTE: aux_context uses descriptor pools borrowed from the main queues and any allocations will be automatically freed when pool is destroyed
+	// NOTE: aux_context uses descriptor pools borrowed from the main queues and any allocations will be automatically freed when pool is destroyed
 	for (auto &ctx : frame_context_storage)
 	{
 		vkDestroySemaphore((*m_device), ctx.present_wait_semaphore, nullptr);
@@ -671,24 +680,24 @@ VKGSRender::~VKGSRender()
 		ctx.buffer_views_to_clean.clear();
 	}
 
-	//Textures
+	// Textures
 	m_rtts.destroy();
 	m_texture_cache.destroy();
 
 	m_stencil_mirror_sampler.reset();
 
-	//Overlay text handler
+	// Overlay text handler
 	m_text_writer.reset();
 
 	//Pipeline descriptors
 	vkDestroyPipelineLayout(*m_device, pipeline_layout, nullptr);
 	vkDestroyDescriptorSetLayout(*m_device, descriptor_layouts, nullptr);
 
-	//Queries
+	// Queries
 	m_occlusion_query_manager.reset();
 	m_cond_render_buffer.reset();
 
-	//Command buffer
+	// Command buffer
 	for (auto &cb : m_primary_cb_list)
 		cb.destroy();
 
@@ -697,7 +706,7 @@ VKGSRender::~VKGSRender()
 	m_secondary_command_buffer.destroy();
 	m_secondary_command_buffer_pool.destroy();
 
-	//Device handles/contexts
+	// Device handles/contexts
 	m_swapchain->destroy();
 	m_instance.destroy();
 
@@ -826,21 +835,92 @@ void VKGSRender::on_semaphore_acquire_wait()
 bool VKGSRender::on_vram_exhausted(rsx::problem_severity severity)
 {
 	ensure(!vk::is_uninterruptible() && rsx::get_current_renderer()->is_current_thread());
-	bool released = m_texture_cache.handle_memory_pressure(severity);
 
-	if (severity <= rsx::problem_severity::moderate)
+	bool texture_cache_relieved = false;
+	if (severity >= rsx::problem_severity::fatal && m_texture_cache.is_overallocated())
 	{
-		released |= m_rtts.handle_memory_pressure(*m_current_command_buffer, severity);
-		return released;
+		// Evict some unused textures. Do not evict any active references
+		std::set<u32> exclusion_list;
+		auto scan_array = [&](const auto& texture_array)
+		{
+			for (auto i = 0ull; i < texture_array.size(); ++i)
+			{
+				const auto& tex = texture_array[i];
+				const auto addr = rsx::get_address(tex.offset(), tex.location());
+				exclusion_list.insert(addr);
+			}
+		};
+
+		scan_array(rsx::method_registers.fragment_textures);
+		scan_array(rsx::method_registers.vertex_textures);
+
+		// Hold the secondary lock guard to prevent threads from trying to touch access violation handler stuff
+		std::lock_guard lock(m_secondary_cb_guard);
+
+		rsx_log.warning("Texture cache is overallocated. Will evict unnecessary textures.");
+		texture_cache_relieved = m_texture_cache.evict_unused(exclusion_list);
 	}
 
-	if (released && severity >= rsx::problem_severity::fatal)
+	texture_cache_relieved |= m_texture_cache.handle_memory_pressure(severity);
+	if (severity == rsx::problem_severity::low)
+	{
+		// Low severity only handles invalidating unused textures
+		return texture_cache_relieved;
+	}
+
+	bool surface_cache_relieved = false;
+	if (severity >= rsx::problem_severity::moderate)
+	{
+		// Check if we need to spill
+		const auto mem_info = m_device->get_memory_mapping();
+		if (severity >= rsx::problem_severity::fatal &&                // Only spill for fatal errors
+			mem_info.device_local != mem_info.host_visible_coherent && // Do not spill if it is an IGP, there is nowhere to spill to
+			m_rtts.is_overallocated())                                 // Surface cache must be over-allocated by the design quota
+		{
+			// Queue a VRAM spill operation.
+			m_rtts.spill_unused_memory();
+		}
+
+		// Moderate severity and higher also starts removing stale render target objects
+		if (m_rtts.handle_memory_pressure(*m_current_command_buffer, severity))
+		{
+			surface_cache_relieved = true;
+			m_rtts.free_invalidated(*m_current_command_buffer, severity);
+		}
+
+		if (severity >= rsx::problem_severity::fatal && surface_cache_relieved && !m_samplers_dirty)
+		{
+			// If surface cache was modified destructively, then we must reload samplers touching the surface cache.
+			bool invalidate_samplers = false;
+			auto scan_array = [&](const auto& texture_array, const auto& sampler_states)
+			{
+				for (auto i = 0ull; i < texture_array.size() && !invalidate_samplers; ++i)
+				{
+					if (texture_array[i].enabled() && sampler_states[i])
+					{
+						invalidate_samplers = (sampler_states[i]->upload_context == rsx::texture_upload_context::framebuffer_storage);
+					}
+				}
+			};
+
+			scan_array(rsx::method_registers.fragment_textures, fs_sampler_state);
+			scan_array(rsx::method_registers.vertex_textures, vs_sampler_state);
+
+			if (invalidate_samplers)
+			{
+				m_samplers_dirty.store(true);
+			}
+		}
+	}
+
+	const bool any_cache_relieved = (texture_cache_relieved || surface_cache_relieved);
+	if (any_cache_relieved && severity >= rsx::problem_severity::fatal)
 	{
 		// Imminent crash, full GPU sync is the least of our problems
-		flush_command_queue(true);
+		flush_command_queue(true, true);
 	}
 
-	return released;
+	return any_cache_relieved;
 }
 
 void VKGSRender::notify_tile_unbound(u32 tile)
@@ -1143,7 +1223,7 @@ void VKGSRender::clear_surface(u32 mask)
 	std::tie(scissor_x, scissor_y, scissor_w, scissor_h) = rsx::clip_region<u16>(fb_width, fb_height, scissor_x, scissor_y, scissor_w, scissor_h, true);
 	VkClearRect region = { { { scissor_x, scissor_y }, { scissor_w, scissor_h } }, 0, 1 };
 
-	const bool require_mem_load = (scissor_w * scissor_h) < (fb_width * fb_height);
+	const bool full_frame = (scissor_w == fb_width && scissor_h == fb_height);
 	bool update_color = false, update_z = false;
 	auto surface_depth_format = rsx::method_registers.surface_depth_fmt();
 
@@ -1173,35 +1253,38 @@ void VKGSRender::clear_surface(u32 mask)
 
 				if (ds->samples() > 1)
 				{
-					if (!require_mem_load) ds->stencil_init_flags &= 0xFF;
+					if (full_frame) ds->stencil_init_flags &= 0xFF;
 					ds->stencil_init_flags |= clear_stencil;
 				}
 			}
+		}
 
-			if ((mask & 0x3) != 0x3 && !require_mem_load && ds->state_flags & rsx::surface_state_flags::erase_bkgnd)
+		if ((depth_stencil_mask && depth_stencil_mask != ds->aspect()) || !full_frame)
+		{
+			// At least one aspect is not being cleared or the clear does not cover the full frame
+			// Steps to initialize memory are required
+
+			if (ds->state_flags & rsx::surface_state_flags::erase_bkgnd &&  // Needs initialization
+				ds->old_contents.empty() && !g_cfg.video.read_depth_buffer) // No way to load data from memory, so no initialization given
 			{
-				ensure(depth_stencil_mask);
-
-				if (!g_cfg.video.read_depth_buffer)
+				// Only one aspect was cleared. Make sure to memory initialize the other before removing dirty flag
+				if (mask == 1)
 				{
-					// Only one aspect was cleared. Make sure to memory initialize the other before removing dirty flag
-					if (mask == 1)
-					{
-						// Depth was cleared, initialize stencil
-						depth_stencil_clear_values.depthStencil.stencil = 0xFF;
-						depth_stencil_mask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-					}
-					else
-					{
-						// Stencil was cleared, initialize depth
-						depth_stencil_clear_values.depthStencil.depth = 1.f;
-						depth_stencil_mask |= VK_IMAGE_ASPECT_DEPTH_BIT;
-					}
+					// Depth was cleared, initialize stencil
+					depth_stencil_clear_values.depthStencil.stencil = 0xFF;
+					depth_stencil_mask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 				}
 				else
 				{
-					ds->write_barrier(*m_current_command_buffer);
+					// Stencil was cleared, initialize depth
+					depth_stencil_clear_values.depthStencil.depth = 1.f;
+					depth_stencil_mask |= VK_IMAGE_ASPECT_DEPTH_BIT;
 				}
+			}
+			else
+			{
+				// Barrier required before any writes
+				ds->write_barrier(*m_current_command_buffer);
 			}
 		}
 	}
@@ -1250,6 +1333,17 @@ void VKGSRender::clear_surface(u32 mask)
 
 			if (colormask)
 			{
+				if (!use_fast_clear || !full_frame)
+				{
+					// If we're not clobber all the memory, a barrier is required
+					for (u8 index = m_rtts.m_bound_render_targets_config.first, count = 0;
+						count < m_rtts.m_bound_render_targets_config.second;
+						++count, ++index)
+					{
+						m_rtts.m_bound_render_targets[index].second->write_barrier(*m_current_command_buffer);
+					}
+				}
+
 				color_clear_values.color.float32[0] = static_cast<float>(clear_r) / 255;
 				color_clear_values.color.float32[1] = static_cast<float>(clear_g) / 255;
 				color_clear_values.color.float32[2] = static_cast<float>(clear_b) / 255;
@@ -1276,14 +1370,6 @@ void VKGSRender::clear_surface(u32 mask)
 					attachment_clear_pass->run(*m_current_command_buffer, m_draw_fbo, region.rect, colormask, clear_color, get_render_pass());
 				}
 
-				for (u8 index = m_rtts.m_bound_render_targets_config.first, count = 0;
-					count < m_rtts.m_bound_render_targets_config.second;
-					++count, ++index)
-				{
-					if (require_mem_load)
-						m_rtts.m_bound_render_targets[index].second->write_barrier(*m_current_command_buffer);
-				}
-
 				update_color = true;
 			}
 		}
@@ -1291,36 +1377,28 @@ void VKGSRender::clear_surface(u32 mask)
 
 	if (depth_stencil_mask)
 	{
-		if (m_rtts.m_bound_depth_stencil.first)
+		if ((depth_stencil_mask & VK_IMAGE_ASPECT_STENCIL_BIT) &&
+			rsx::method_registers.stencil_mask() != 0xff)
 		{
-			if (require_mem_load)
-			{
-				m_rtts.m_bound_depth_stencil.second->write_barrier(*m_current_command_buffer);
-			}
+			// Partial stencil clear. Disables fast stencil clear
+			auto ds = std::get<1>(m_rtts.m_bound_depth_stencil);
+			auto key = vk::get_renderpass_key({ ds });
+			auto renderpass = vk::get_renderpass(*m_device, key);
 
-			if ((depth_stencil_mask & VK_IMAGE_ASPECT_STENCIL_BIT) &&
-				rsx::method_registers.stencil_mask() != 0xff)
-			{
-				// Partial stencil clear. Disables fast stencil clear
-				auto ds = std::get<1>(m_rtts.m_bound_depth_stencil);
-				auto key = vk::get_renderpass_key({ ds });
-				auto renderpass = vk::get_renderpass(*m_device, key);
+			vk::get_overlay_pass<vk::stencil_clear_pass>()->run(
+				*m_current_command_buffer, ds, region.rect,
+				depth_stencil_clear_values.depthStencil.stencil,
+				rsx::method_registers.stencil_mask(), renderpass);
 
-				vk::get_overlay_pass<vk::stencil_clear_pass>()->run(
-					*m_current_command_buffer, ds, region.rect,
-					depth_stencil_clear_values.depthStencil.stencil,
-					rsx::method_registers.stencil_mask(), renderpass);
-
-				depth_stencil_mask &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
-			}
-
-			if (depth_stencil_mask)
-			{
-				clear_descriptors.push_back({ static_cast<VkImageAspectFlags>(depth_stencil_mask), 0, depth_stencil_clear_values });
-			}
-
-			update_z = true;
+			depth_stencil_mask &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
 		}
+
+		if (depth_stencil_mask)
+		{
+			clear_descriptors.push_back({ static_cast<VkImageAspectFlags>(depth_stencil_mask), 0, depth_stencil_clear_values });
+		}
+
+		update_z = true;
 	}
 
 	if (update_color || update_z)
@@ -1336,7 +1414,7 @@ void VKGSRender::clear_surface(u32 mask)
 	}
 }
 
-void VKGSRender::flush_command_queue(bool hard_sync)
+void VKGSRender::flush_command_queue(bool hard_sync, bool do_not_switch)
 {
 	close_and_submit_command_buffer(m_current_command_buffer->submit_fence);
 
@@ -1367,17 +1445,25 @@ void VKGSRender::flush_command_queue(bool hard_sync)
 		m_current_command_buffer->pending = true;
 	}
 
-	// Grab next cb in line and make it usable
-	// NOTE: Even in the case of a hard sync, this is required to free any waiters on the CB (ZCULL)
-	m_current_cb_index = (m_current_cb_index + 1) % VK_MAX_ASYNC_CB_COUNT;
-	m_current_command_buffer = &m_primary_cb_list[m_current_cb_index];
-
-	if (!m_current_command_buffer->poke())
+	if (!do_not_switch)
 	{
-		rsx_log.error("CB chain has run out of free entries!");
-	}
+		// Grab next cb in line and make it usable
+		// NOTE: Even in the case of a hard sync, this is required to free any waiters on the CB (ZCULL)
+		m_current_cb_index = (m_current_cb_index + 1) % VK_MAX_ASYNC_CB_COUNT;
+		m_current_command_buffer = &m_primary_cb_list[m_current_cb_index];
 
-	m_current_command_buffer->reset();
+		if (!m_current_command_buffer->poke())
+		{
+			rsx_log.error("CB chain has run out of free entries!");
+		}
+
+		m_current_command_buffer->reset();
+	}
+	else
+	{
+		// Special hard-sync where we must preserve the CB. This can happen when an emergency event handler is invoked and needs to flush to hw.
+		ensure(hard_sync);
+	}
 
 	// Just in case a queued frame holds a ref to this cb, drain the present queue
 	check_present_status();
@@ -1755,7 +1841,7 @@ void VKGSRender::load_program_env()
 		fill_scale_offset_data(buf, false);
 		fill_user_clip_data(buf + 64);
 		*(reinterpret_cast<u32*>(buf + 128)) = rsx::method_registers.transform_branch_bits();
-		*(reinterpret_cast<f32*>(buf + 132)) = rsx::method_registers.point_size();
+		*(reinterpret_cast<f32*>(buf + 132)) = rsx::method_registers.point_size() * rsx::get_resolution_scale();
 		*(reinterpret_cast<f32*>(buf + 136)) = rsx::method_registers.clip_min();
 		*(reinterpret_cast<f32*>(buf + 140)) = rsx::method_registers.clip_max();
 
@@ -1814,12 +1900,12 @@ void VKGSRender::load_program_env()
 	{
 		check_heap_status(VK_HEAP_CHECK_TEXTURE_ENV_STORAGE);
 
-		auto mem = m_fragment_texture_params_ring_info.alloc<256>(256);
-		auto buf = m_fragment_texture_params_ring_info.map(mem, 256);
+		auto mem = m_fragment_texture_params_ring_info.alloc<256>(512);
+		auto buf = m_fragment_texture_params_ring_info.map(mem, 512);
 
 		current_fragment_program.texture_params.write_to(buf, current_fp_metadata.referenced_textures_mask);
 		m_fragment_texture_params_ring_info.unmap();
-		m_fragment_texture_params_buffer_info = { m_fragment_texture_params_ring_info.heap->value, mem, 256 };
+		m_fragment_texture_params_buffer_info = { m_fragment_texture_params_ring_info.heap->value, mem, 512 };
 	}
 
 	if (update_raster_env)
@@ -1896,7 +1982,7 @@ void VKGSRender::load_program_env()
 
 	if (vk::emulate_conditional_rendering())
 	{
-		auto predicate = m_cond_render_buffer ? m_cond_render_buffer->value : vk::get_scratch_buffer()->value;
+		auto predicate = m_cond_render_buffer ? m_cond_render_buffer->value : vk::get_scratch_buffer(4)->value;
 		m_program->bind_buffer({ predicate, 0, 4 }, binding_table.conditional_render_predicate_slot, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, m_current_frame->descriptor_set);
 	}
 
@@ -2463,7 +2549,7 @@ void VKGSRender::begin_conditional_rendering(const std::vector<rsx::reports::occ
 		m_cond_render_buffer = std::make_unique<vk::buffer>(
 			*m_device, 4,
 			memory_props.device_local, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			usage_flags, 0);
+			usage_flags, 0, VMM_ALLOCATION_POOL_UNDEFINED);
 	}
 
 	VkPipelineStageFlags dst_stage;
@@ -2499,7 +2585,7 @@ void VKGSRender::begin_conditional_rendering(const std::vector<rsx::reports::occ
 		}
 	}
 
-	auto scratch = vk::get_scratch_buffer();
+	auto scratch = vk::get_scratch_buffer(OCCLUSION_MAX_POOL_SIZE * 4);
 	u32 dst_offset = 0;
 	usz first = 0;
 	usz last;

@@ -37,6 +37,8 @@
 
 constexpr auto qstr = QString::fromStdString;
 
+LOG_CHANNEL(sys_log, "SYS");
+
 enum kernel_item_role
 {
 	name_role       = Qt::UserRole + 0,
@@ -54,7 +56,7 @@ enum kernel_item_type : int
 	leaf
 };
 
-static QTreeWidgetItem* add_child(QTreeWidgetItem *parent, const QString& text, int column, kernel_item_type type)
+static QTreeWidgetItem* add_child(QTreeWidgetItem* parent, const QString& text, int column, kernel_item_type type)
 {
 	if (parent)
 	{
@@ -75,12 +77,12 @@ static QTreeWidgetItem* add_child(QTreeWidgetItem *parent, const QString& text, 
 	return item;
 }
 
-static QTreeWidgetItem* add_leaf(QTreeWidgetItem *parent, const QString& text, int column = 0)
+static QTreeWidgetItem* add_leaf(QTreeWidgetItem* parent, const QString& text, int column = 0)
 {
 	return add_child(parent, text, column, kernel_item_type::leaf);
 }
 
-static QTreeWidgetItem* add_node(u32 id, QTreeWidgetItem *parent, const QString& text, int column = 0)
+static QTreeWidgetItem* add_node(u32 id, QTreeWidgetItem* parent, const QString& text, int column = 0)
 {
 	QTreeWidgetItem* node = add_child(parent, text, column, kernel_item_type::node);
 	if (node)
@@ -90,13 +92,17 @@ static QTreeWidgetItem* add_node(u32 id, QTreeWidgetItem *parent, const QString&
 	return node;
 }
 
-static QTreeWidgetItem* find_first_node(QTreeWidget* tree, QTreeWidgetItem *parent, const QString& regexp)
+static QTreeWidgetItem* find_first_node(QTreeWidgetItem* parent, const QString& regexp)
 {
-	if (tree && parent)
+	if (parent)
 	{
-		for (auto item : tree->findItems(regexp, Qt::MatchFlag::MatchRegularExpression | Qt::MatchFlag::MatchRecursive))
+		const QRegularExpression re(regexp);
+
+		for (int i = 0; i < parent->childCount(); i++)
 		{
-			if (item->parent() == parent && item->data(0, kernel_item_role::type_role).toInt() != kernel_item_type::leaf)
+			if (QTreeWidgetItem* item = parent->child(i); item &&
+				item->data(0, kernel_item_role::type_role).toInt() != kernel_item_type::leaf &&
+				re.match(item->data(0, kernel_item_role::name_role).toString()).hasMatch())
 			{
 				return item;
 			}
@@ -105,30 +111,15 @@ static QTreeWidgetItem* find_first_node(QTreeWidget* tree, QTreeWidgetItem *pare
 	return nullptr;
 }
 
-static QTreeWidgetItem* find_node(QTreeWidget* tree, u32 id)
-{
-	if (tree)
-	{
-		for (auto item : tree->findItems(".*", Qt::MatchFlag::MatchRegularExpression | Qt::MatchFlag::MatchRecursive))
-		{
-			if (item->data(0, kernel_item_role::type_role).toInt() == kernel_item_type::node &&
-				item->data(0, kernel_item_role::id_role).toUInt() == id)
-			{
-				return item;
-			}
-		}
-	}
-	return nullptr;
-}
-
-// Find node with ID in selected node children (optimization)
+// Find node with ID in selected node children
 static QTreeWidgetItem* find_node(QTreeWidgetItem* root, u32 id)
 {
 	if (root)
 	{
 		for (int i = 0; i < root->childCount(); i++)
 		{
-			if (auto item = root->child(i); item->data(0, kernel_item_role::type_role).toInt() == kernel_item_type::node &&
+			if (QTreeWidgetItem* item = root->child(i); item &&
+				item->data(0, kernel_item_role::type_role).toInt() == kernel_item_type::node &&
 				item->data(0, kernel_item_role::id_role).toUInt() == id)
 			{
 				return item;
@@ -136,12 +127,13 @@ static QTreeWidgetItem* find_node(QTreeWidgetItem* root, u32 id)
 		}
 	}
 
+	sys_log.fatal("find_node(root=%s, id=%d) failed", root ? root->text(0).toStdString() : "?", id);
 	return nullptr;
 }
 
-static QTreeWidgetItem* add_volatile_node(QTreeWidget* tree, QTreeWidgetItem *parent, const QString& base_text, const QString& text = "", int column = 0)
+static QTreeWidgetItem* add_volatile_node(QTreeWidgetItem* parent, const QString& base_text, const QString& text = "", int column = 0)
 {
-	QTreeWidgetItem* node = find_first_node(tree, parent, base_text + ".*");
+	QTreeWidgetItem* node = find_first_node(parent, base_text + ".*");
 	if (!node)
 	{
 		node = add_child(parent, base_text, column, kernel_item_type::volatile_node);
@@ -150,12 +142,16 @@ static QTreeWidgetItem* add_volatile_node(QTreeWidget* tree, QTreeWidgetItem *pa
 	{
 		node->setText(0, text.isEmpty() ? base_text : text);
 	}
+	else
+	{
+		sys_log.fatal("add_volatile_node(parent=%s, regexp=%s) failed", parent ? parent->text(0).toStdString() : "?", base_text.toStdString() + ".*");
+	}
 	return node;
 }
 
-static QTreeWidgetItem* add_solid_node(QTreeWidget* tree, QTreeWidgetItem *parent, const QString& base_text, const QString& text = "", int column = 0)
+static QTreeWidgetItem* add_solid_node(QTreeWidgetItem* parent, const QString& base_text, const QString& text = "", int column = 0)
 {
-	QTreeWidgetItem* node = find_first_node(tree, parent, base_text + ".*");
+	QTreeWidgetItem* node = find_first_node(parent, base_text + ".*");
 	if (!node)
 	{
 		node = add_child(parent, base_text, column, kernel_item_type::solid_node);
@@ -164,25 +160,32 @@ static QTreeWidgetItem* add_solid_node(QTreeWidget* tree, QTreeWidgetItem *paren
 	{
 		node->setText(0, text.isEmpty() ? base_text : text);
 	}
+	else
+	{
+		sys_log.fatal("add_solid_node(parent=%s, regexp=%s) failed", parent ? parent->text(0).toStdString() : "?", base_text.toStdString() + ".*");
+	}
 	return node;
 }
 
 kernel_explorer::kernel_explorer(QWidget* parent)
 	: QDialog(parent)
 {
-	setWindowTitle(tr("Kernel Explorer"));
+	setWindowTitle(tr("Kernel Explorer | %1").arg(qstr(Emu.GetTitleAndTitleID())));
 	setObjectName("kernel_explorer");
 	setAttribute(Qt::WA_DeleteOnClose);
-	setMinimumSize(QSize(800, 650));
+	setMinimumSize(QSize(800, 600));
 
 	QVBoxLayout* vbox_panel = new QVBoxLayout();
 	QHBoxLayout* hbox_buttons = new QHBoxLayout();
 	QPushButton* button_refresh = new QPushButton(tr("Refresh"), this);
+	QPushButton* button_log = new QPushButton(tr("Log All"), this);
 	hbox_buttons->addWidget(button_refresh);
+	hbox_buttons->addSpacing(8);
+	hbox_buttons->addWidget(button_log);
 	hbox_buttons->addStretch();
 
 	m_tree = new QTreeWidget(this);
-	m_tree->setBaseSize(QSize(700, 500));
+	m_tree->setBaseSize(QSize(700, 450));
 	m_tree->setWindowTitle(tr("Kernel"));
 	m_tree->header()->close();
 
@@ -194,12 +197,17 @@ kernel_explorer::kernel_explorer(QWidget* parent)
 	setLayout(vbox_panel);
 
 	// Events
-	connect(button_refresh, &QAbstractButton::clicked, this, &kernel_explorer::Update);
+	connect(button_refresh, &QAbstractButton::clicked, this, &kernel_explorer::update);
+	connect(button_log, &QAbstractButton::clicked, this, [this]()
+	{
+		log();
+		m_log_buf.clear();
+	});
 
-	Update();
+	update();
 }
 
-void kernel_explorer::Update()
+void kernel_explorer::update()
 {
 	const auto dct = g_fxo->try_get<lv2_memory_container>();
 
@@ -209,9 +217,7 @@ void kernel_explorer::Update()
 		return;
 	}
 
-	//static const usz additional_size = 6;
-
-	const std::unordered_map<u32, QString> tree_item_names =
+	const std::initializer_list<std::pair<u32, QString>> tree_item_names =
 	{
 		{ process_info                   , tr("Process Info")},
 
@@ -232,7 +238,7 @@ void kernel_explorer::Update()
 		{ SYS_LWMUTEX_OBJECT             , tr("Light Weight Mutexes")},
 		{ SYS_TIMER_OBJECT               , tr("Timers")},
 		{ SYS_SEMAPHORE_OBJECT           , tr("Semaphores")},
-		{ SYS_FS_FD_OBJECT               , tr("File Descriptors ?")},
+		{ SYS_FS_FD_OBJECT               , tr("File Descriptors")},
 		{ SYS_LWCOND_OBJECT              , tr("Light Weight Condition Variables")},
 		{ SYS_EVENT_FLAG_OBJECT          , tr("Event Flags")},
 
@@ -306,7 +312,7 @@ void kernel_explorer::Update()
 	root->setText(0, qstr(fmt::format("Process 0x%08x: Total Memory Usage: 0x%x/0x%x (%0.2f/%0.2f MB)", process_getpid(), total_memory_usage, dct->size, 1. * total_memory_usage / (1024 * 1024)
 		, 1. * dct->size / (1024 * 1024))));
 
-	add_solid_node(m_tree, find_node(root, additional_nodes::process_info), qstr(fmt::format("Process Info, Sdk Version: 0x%08x, PPC SEG: %#x, SFO Category: %s", g_ps3_process_info.sdk_ver, g_ps3_process_info.ppc_seg, Emu.GetCat())));
+	add_solid_node(find_node(root, additional_nodes::process_info), qstr(fmt::format("Process Info, Sdk Version: 0x%08x, PPC SEG: %#x, SFO Category: %s", g_ps3_process_info.sdk_ver, g_ps3_process_info.ppc_seg, Emu.GetCat())));
 
 	auto display_program_segments = [this](QTreeWidgetItem* tree, const ppu_module& m)
 	{
@@ -438,7 +444,7 @@ void kernel_explorer::Update()
 			}
 
 			const QString text = qstr(fmt::format("PRX 0x%08x: '%s'", id, prx.name));
-			QTreeWidgetItem* prx_tree = add_solid_node(m_tree, node, text, text);
+			QTreeWidgetItem* prx_tree = add_solid_node(node, text, text);
 			display_program_segments(prx_tree, prx);
 			break;
 		}
@@ -451,7 +457,7 @@ void kernel_explorer::Update()
 		{
 			auto& ovl = static_cast<lv2_overlay&>(obj);
 			const QString text = qstr(fmt::format("OVL 0x%08x: '%s'", id, ovl.name));
-			QTreeWidgetItem* ovl_tree = add_solid_node(m_tree, node, text, text);
+			QTreeWidgetItem* ovl_tree = add_solid_node(node, text, text);
 			display_program_segments(ovl_tree, ovl);
 			break;
 		}
@@ -461,7 +467,7 @@ void kernel_explorer::Update()
 			std::string owner_str = "unknown"; // Either invalid state or the lwmutex control data was moved from
 			sys_lwmutex_t lwm_data{};
 
-			if (lwm.control.try_read(lwm_data))
+			if (lwm.control.try_read(lwm_data) && lwm_data.sleep_queue == id)
 			{
 				switch (const u32 owner = lwm_data.vars.owner)
 				{
@@ -485,12 +491,12 @@ void kernel_explorer::Update()
 			}
 			else
 			{
-				add_leaf(node, qstr(fmt::format(u8"LWMutex 0x%08x: “%s”, %s, Signal: %#x, Wq: %zu (Couldn't extract control data)", id, lv2_obj::name64(lwm.name), lwm.protocol, +lwm.signaled, lwm.sq.size())));
+				add_leaf(node, qstr(fmt::format(u8"LWMutex 0x%08x: “%s”, %s, Signal: %#x, Wq: %zu (unmapped/invalid control data at *0x%x)", id, lv2_obj::name64(lwm.name), lwm.protocol, +lwm.signaled, lwm.sq.size(), lwm.control)));
 				break;
 			}
 
-			add_leaf(node, qstr(fmt::format(u8"LWMutex 0x%08x: “%s”, %s,%s Owner: %s, Locks: %u, Signal: %#x, Wq: %zu", id, lv2_obj::name64(lwm.name), lwm.protocol,
-					(lwm_data.attribute & SYS_SYNC_RECURSIVE) ? " Recursive," : "", owner_str, lwm_data.recursive_count, +lwm.signaled, lwm.sq.size())));
+			add_leaf(node, qstr(fmt::format(u8"LWMutex 0x%08x: “%s”, %s,%s Owner: %s, Locks: %u, Signal: %#x, Control: *0x%x, Wq: %zu", id, lv2_obj::name64(lwm.name), lwm.protocol,
+					(lwm_data.attribute & SYS_SYNC_RECURSIVE) ? " Recursive," : "", owner_str, lwm_data.recursive_count, +lwm.signaled, lwm.control, lwm.sq.size())));
 			break;
 		}
 		case SYS_TIMER_OBJECT:
@@ -515,7 +521,7 @@ void kernel_explorer::Update()
 		case SYS_LWCOND_OBJECT:
 		{
 			auto& lwc = static_cast<lv2_lwcond&>(obj);
-			add_leaf(node, qstr(fmt::format(u8"LWCond 0x%08x: “%s”, %s, OG LWMutex: 0x%08x, Wq: %zu", id, lv2_obj::name64(lwc.name), lwc.protocol, lwc.lwid, +lwc.waiters)));
+			add_leaf(node, qstr(fmt::format(u8"LWCond 0x%08x: “%s”, %s, OG LWMutex: 0x%08x, Control: *0x%x, Wq: %zu", id, lv2_obj::name64(lwc.name), lwc.protocol, lwc.lwid, lwc.control, +lwc.waiters)));
 			break;
 		}
 		case SYS_EVENT_FLAG_OBJECT:
@@ -536,7 +542,7 @@ void kernel_explorer::Update()
 	{
 		const u32 psize = vmo.psize;
 		add_leaf(find_node(root, additional_nodes::virtual_memory), qstr(fmt::format("Virtual Mem 0x%08x: Virtual Size: 0x%x (%0.2f MB), Physical Size: 0x%x (%0.2f MB), Mem Container: %s", vmo.addr
-			, vmo.size, vmo.size * 1. / (1024 * 1024), psize, psize * 1. / (1024 * 1024))), vmo.ct->id);
+			, vmo.size, vmo.size * 1. / (1024 * 1024), psize, psize * 1. / (1024 * 1024), vmo.ct->id)));
 	});
 
 	idm::select<lv2_socket>([&](u32 id, lv2_socket& sock)
@@ -550,18 +556,22 @@ void kernel_explorer::Update()
 		add_leaf(find_node(root, additional_nodes::memory_containers), qstr(fmt::format("Memory Container 0x%08x: Used: 0x%x/0x%x (%0.2f/%0.2f MB)", id, used, container.size, used * 1. / (1024 * 1024), container.size * 1. / (1024 * 1024))));
 	});
 
+	std::unique_lock lock_lv2(lv2_obj::g_mutex);
+
 	idm::select<named_thread<ppu_thread>>([&](u32 id, ppu_thread& ppu)
 	{
 		const auto func = ppu.last_function;
-		const ppu_thread_status status = lv2_obj::ppu_state(&ppu, false);
+		const ppu_thread_status status = lv2_obj::ppu_state(&ppu, false, false);
 
 		add_leaf(find_node(root, additional_nodes::ppu_threads), qstr(fmt::format(u8"PPU 0x%07x: “%s”, PRIO: %d, Joiner: %s, Status: %s, State: %s, %s func: “%s”", id, *ppu.ppu_tname.load(), +ppu.prio, ppu.joiner.load(), status, ppu.state.load()
 			, ppu.current_function ? "In" : "Last", func ? func : "")));
 	});
 
+	lock_lv2.unlock();
+
 	idm::select<named_thread<spu_thread>>([&](u32 /*id*/, spu_thread& spu)
 	{
-		QTreeWidgetItem* spu_thread_tree = add_solid_node(m_tree, find_node(root, additional_nodes::spu_threads), qstr(fmt::format(u8"SPU 0x%07x: “%s”, State: %s, Type: %s", spu.lv2_id, *spu.spu_tname.load(), spu.state.load(), spu.get_type())));
+		QTreeWidgetItem* spu_thread_tree = add_solid_node(find_node(root, additional_nodes::spu_threads), qstr(fmt::format(u8"SPU 0x%07x: “%s”, State: %s, Type: %s", spu.lv2_id, *spu.spu_tname.load(), spu.state.load(), spu.get_type())));
 
 		if (spu.get_type() == spu_type::threaded)
 		{
@@ -617,7 +627,7 @@ void kernel_explorer::Update()
 
 	idm::select<lv2_spu_group>([&](u32 id, lv2_spu_group& tg)
 	{
-		QTreeWidgetItem* spu_tree = add_solid_node(m_tree, find_node(root, additional_nodes::spu_thread_groups), qstr(fmt::format(u8"SPU Group 0x%07x: “%s”, Status = %s, Priority = %d, Type = 0x%x", id, tg.name, tg.run_state.load(), +tg.prio, tg.type)));
+		QTreeWidgetItem* spu_tree = add_solid_node(find_node(root, additional_nodes::spu_thread_groups), qstr(fmt::format(u8"SPU Group 0x%07x: “%s”, Status = %s, Priority = %d, Type = 0x%x", id, tg.name, tg.run_state.load(), +tg.prio, tg.type)));
 
 		if (tg.name.ends_with("CellSpursKernelGroup"sv))
 		{
@@ -655,7 +665,7 @@ void kernel_explorer::Update()
 			{
 				const QString branch_name = tr("SPURS %1").arg(pspurs.addr());
 				const u32 wklEnabled = spurs.wklEnabled;
-				QTreeWidgetItem* spurs_tree = add_solid_node(m_tree, spu_tree, branch_name, qstr(fmt::format("SPURS, Instance: *0x%x, LWMutex: 0x%x, LWCond: 0x%x, wklEnabled: 0x%x"
+				QTreeWidgetItem* spurs_tree = add_solid_node(spu_tree, branch_name, qstr(fmt::format("SPURS, Instance: *0x%x, LWMutex: 0x%x, LWCond: 0x%x, wklEnabled: 0x%x"
 					, pspurs, spurs.mutex.sleep_queue, spurs.cond.lwcond_queue, wklEnabled)));
 
 				const u32 signal_mask = u32{spurs.wklSignal1} << 16 | spurs.wklSignal2;
@@ -680,7 +690,7 @@ void kernel_explorer::Update()
 					const u8 status = spurs.wklStatus(wid);
 					const auto has_signal = (signal_mask & (0x80000000u >> wid)) ? "Signalled"sv : "No Signal"sv;
 
-					QTreeWidgetItem* wkl_tree = add_solid_node(m_tree, spurs_tree, branch_name + qstr(fmt::format(" Work.%u", wid)), qstr(fmt::format("Work.%u, class: %s, %s, %s, Status: %#x, Event: %#x, %s, ReadyCnt: %u", wid, +name.nameClass, +name.nameInstance, state, status, evt, has_signal, ready_count)));
+					QTreeWidgetItem* wkl_tree = add_solid_node(spurs_tree, branch_name + qstr(fmt::format(" Work.%u", wid)), qstr(fmt::format("Work.%u, class: %s, %s, %s, Status: %#x, Event: %#x, %s, ReadyCnt: %u", wid, +name.nameClass, +name.nameInstance, state, status, evt, has_signal, ready_count)));
 
 					auto contention = [&](u8 v)
 					{
@@ -725,12 +735,12 @@ void kernel_explorer::Update()
 		}
 
 		const QString branch_name = "RSX Context 0x55555555";
-		QTreeWidgetItem* rsx_tree = add_solid_node(m_tree, rsx_context_node, branch_name,
+		QTreeWidgetItem* rsx_tree = add_solid_node(rsx_context_node, branch_name,
 			branch_name + qstr(fmt::format(u8", Local Size: %u MB, Base Addr: 0x%x, Device Addr: 0x%x, Handlers: 0x%x", rsx->local_mem_size >> 20, base, rsx->device_addr, +vm::_ref<RsxDriverInfo>(rsx->driver_info).handlers)));
 
-		QTreeWidgetItem* io_tree = add_volatile_node(m_tree, rsx_tree, tr("IO-EA Table"));
-		QTreeWidgetItem* zc_tree = add_volatile_node(m_tree, rsx_tree, tr("Zcull Bindings"));
-		QTreeWidgetItem* db_tree = add_volatile_node(m_tree, rsx_tree, tr("Display Buffers"));
+		QTreeWidgetItem* io_tree = add_volatile_node(rsx_tree, tr("IO-EA Table"));
+		QTreeWidgetItem* zc_tree = add_volatile_node(rsx_tree, tr("Zcull Bindings"));
+		QTreeWidgetItem* db_tree = add_volatile_node(rsx_tree, tr("Display Buffers"));
 
 		decltype(rsx->iomap_table) table;
 		decltype(rsx->display_buffers) dbs;
@@ -888,4 +898,39 @@ void kernel_explorer::Update()
 	};
 	final_touches(root);
 	root->setExpanded(true);
+}
+
+void kernel_explorer::log(u32 level, QTreeWidgetItem* item)
+{
+	if (!item)
+	{
+		item = m_tree->topLevelItem(0);
+
+		if (!item)
+		{
+			return;
+		}
+
+		m_log_buf = qstr(fmt::format("Kernel Explorer: %s\n", Emu.GetTitleAndTitleID()));
+		log(level + 1, item);
+
+		sys_log.success("%s", m_log_buf.toStdString());
+		return;
+	}
+
+	for (u32 j = 0; j < level; j++)
+	{
+		m_log_buf += QChar::Nbsp;
+	}
+
+	m_log_buf.append(item->text(0));
+	m_log_buf += '\n';
+
+	for (int i = 0; i < item->childCount(); i++)
+	{
+		if (auto node = item->child(i); node && !node->isHidden())
+		{
+			log(level + 1, node);
+		}
+	}
 }

@@ -44,7 +44,7 @@
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MaxSpeed</Optimization>
     </ClCompile>
     <PreBuildEvent>
-      <Command>%windir%\sysnative\cmd.exe /c "$(SolutionDir)\Utilities\git-version-gen.cmd"</Command>
+      <Command>cmd.exe /c "$(SolutionDir)\Utilities\git-version-gen.cmd"</Command>
       <Message>Updating git-version.h</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
@@ -60,6 +60,7 @@
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="Emu\cache_utils.cpp" />
+    <ClCompile Include="Emu\Cell\Modules\libfs_utility_init.cpp" />
     <ClCompile Include="Emu\Cell\Modules\sys_crashdump.cpp" />
     <ClCompile Include="Emu\Io\Turntable.cpp" />
     <ClCompile Include="Emu\Io\GHLtar.cpp" />
@@ -96,6 +97,7 @@
     <ClCompile Include="util\atomic.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="util\media_utils.cpp" />
     <ClCompile Include="util\yaml.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -438,6 +440,7 @@
     <ClInclude Include="Emu\Cell\Modules\cellRemotePlay.h" />
     <ClInclude Include="Emu\Cell\Modules\cellSsl.h" />
     <ClInclude Include="Emu\Cell\Modules\cellStorage.h" />
+    <ClInclude Include="Emu\Cell\Modules\libfs_utility_init.h" />
     <ClInclude Include="Emu\Cell\Modules\sys_crashdump.h" />
     <ClInclude Include="Emu\Io\Turntable.h" />
     <ClInclude Include="Emu\Io\GHLtar.h" />
@@ -486,6 +489,7 @@
     <ClInclude Include="Emu\system_config_types.h" />
     <ClInclude Include="Loader\mself.hpp" />
     <ClInclude Include="util\atomic.hpp" />
+    <ClInclude Include="util\media_utils.h" />
     <ClInclude Include="util\serialization.hpp" />
     <ClInclude Include="util\v128.hpp" />
     <ClInclude Include="util\v128sse.hpp" />

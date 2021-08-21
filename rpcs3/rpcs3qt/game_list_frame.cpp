@@ -16,6 +16,7 @@
 
 #include "Emu/Memory/vm.h"
 #include "Emu/System.h"
+#include "Emu/system_config.h"
 #include "Emu/system_utils.hpp"
 #include "Loader/PSF.h"
 #include "util/types.hpp"
@@ -42,6 +43,8 @@
 
 LOG_CHANNEL(game_list_log, "GameList");
 LOG_CHANNEL(sys_log, "SYS");
+
+extern atomic_t<bool> g_system_progress_canceled;
 
 inline std::string sstr(const QString& _in) { return _in.toStdString(); }
 
@@ -748,7 +751,7 @@ void game_list_frame::OnRefreshFinished()
 					return false;
 				};
 
-				if (entry->info.serial == other->info.serial && other->info.category == "GD" && other->info.app_ver != cat_unknown_localized)
+				if (entry->info.serial == other->info.serial && other->info.category != "DG" && other->info.app_ver != cat_unknown_localized)
 				{
 					// Update the app version if it's higher than the disc's version (old games may not have an app version)
 					if (entry->info.app_ver == cat_unknown_localized || version_is_bigger(other->info.app_ver, entry->info.app_ver, entry->info.serial, true))
@@ -1399,19 +1402,24 @@ void game_list_frame::ShowContextMenu(const QPoint &pos)
 	menu.exec(global_pos);
 }
 
-bool game_list_frame::CreatePPUCache(const game_info& game)
+bool game_list_frame::CreatePPUCache(const std::string& path, const std::string& serial)
 {
 	Emu.SetForceBoot(true);
 	Emu.Stop();
 	Emu.SetForceBoot(true);
 
-	if (const auto error = Emu.BootGame(game->info.path, game->info.serial, true); error != game_boot_result::no_errors)
+	if (const auto error = Emu.BootGame(path, serial, true); error != game_boot_result::no_errors)
 	{
-		game_list_log.error("Could not create PPU Cache for %s, error: %s", game->info.path, error);
+		game_list_log.error("Could not create PPU Cache for %s, error: %s", path, error);
 		return false;
 	}
-	game_list_log.warning("Creating PPU Cache for %s", game->info.path);
+	game_list_log.warning("Creating PPU Cache for %s", path);
 	return true;
+}
+
+bool game_list_frame::CreatePPUCache(const game_info& game)
+{
+	return game && CreatePPUCache(game->info.path, game->info.serial);
 }
 
 bool game_list_frame::RemoveCustomConfiguration(const std::string& title_id, const game_info& game, bool is_interactive)
@@ -1458,7 +1466,10 @@ bool game_list_frame::RemoveCustomConfiguration(const std::string& title_id, con
 
 bool game_list_frame::RemoveCustomPadConfiguration(const std::string& title_id, const game_info& game, bool is_interactive)
 {
-	const std::string config_dir = rpcs3::utils::get_custom_input_config_dir(title_id);
+	if (title_id.empty())
+		return true;
+
+	const std::string config_dir = rpcs3::utils::get_input_config_dir(title_id);
 
 	if (!fs::is_dir(config_dir))
 		return true;
@@ -1620,7 +1631,9 @@ bool game_list_frame::RemoveSPUCache(const std::string& base_dir, bool is_intera
 
 void game_list_frame::BatchCreatePPUCaches()
 {
-	const u32 total = m_game_data.size();
+	const std::string vsh_path = g_cfg.vfs.get_dev_flash() + "vsh/module/";
+	const bool vsh_exists = fs::is_file(vsh_path + "vsh.self");
+	const u32 total = m_game_data.size() + (vsh_exists ? 1 : 0);
 
 	if (total == 0)
 	{
@@ -1633,29 +1646,71 @@ void game_list_frame::BatchCreatePPUCaches()
 		return;
 	}
 
-	progress_dialog* pdlg = new progress_dialog(tr("PPU Cache Batch Creation"), tr("Creating all PPU caches"), tr("Cancel"), 0, total, true, this);
+	const QString main_label = tr("Creating all PPU caches");
+
+	progress_dialog* pdlg = new progress_dialog(tr("PPU Cache Batch Creation"), main_label, tr("Cancel"), 0, total, true, this);
 	pdlg->setAutoClose(false);
 	pdlg->setAutoReset(false);
 	pdlg->show();
+	QApplication::processEvents();
 
 	u32 created = 0;
-	for (const auto& game : m_game_data)
+
+	const auto wait_until_compiled = [pdlg]() -> bool
 	{
-		if (pdlg->wasCanceled())
+		while (!Emu.IsStopped())
 		{
-			game_list_log.notice("PPU Cache Batch Creation was canceled");
-			break;
+			if (pdlg->wasCanceled())
+			{
+				return false;
+			}
+			QApplication::processEvents();
 		}
+		return true;
+	};
+
+	if (vsh_exists)
+	{
+		pdlg->setLabelText(tr("%0\nProgress: %1/%2. Compiling caches for VSH...", "Second line after main label").arg(main_label).arg(created).arg(total));
 		QApplication::processEvents();
 
-		if (CreatePPUCache(game))
+		if (CreatePPUCache(vsh_path) && wait_until_compiled())
 		{
-			while (!Emu.IsStopped())
-			{
-				QApplication::processEvents();
-			}
 			pdlg->SetValue(++created);
 		}
+	}
+
+	for (const auto& game : m_game_data)
+	{
+		if (pdlg->wasCanceled() || g_system_progress_canceled)
+		{
+			break;
+		}
+
+		pdlg->setLabelText(tr("%0\nProgress: %1/%2. Compiling caches for %3...", "Second line after main label").arg(main_label).arg(created).arg(total).arg(qstr(game->info.serial)));
+		QApplication::processEvents();
+
+		if (CreatePPUCache(game) && wait_until_compiled())
+		{
+			pdlg->SetValue(++created);
+		}
+	}
+
+	if (pdlg->wasCanceled() || g_system_progress_canceled)
+	{
+		game_list_log.notice("PPU Cache Batch Creation was canceled");
+
+		if (!Emu.IsStopped())
+		{
+			QApplication::processEvents();
+			Emu.Stop();
+		}
+
+		if (!pdlg->wasCanceled())
+		{
+			pdlg->close();
+		}
+		return;
 	}
 
 	pdlg->setLabelText(tr("Created PPU Caches for %n title(s)", "", created));
@@ -1941,11 +1996,11 @@ QPixmap game_list_frame::PaintedPixmap(const QPixmap& icon, bool paint_config_ic
 		}
 		else if (paint_config_icon)
 		{
-			icon_path = ":/Icons/custom_config_2.png";
+			icon_path = ":/Icons/custom_config.png";
 		}
 		else if (paint_pad_config_icon)
 		{
-			icon_path = ":/Icons/controllers_2.png";
+			icon_path = ":/Icons/controllers.png";
 		}
 
 		QPixmap custom_config_icon(icon_path);

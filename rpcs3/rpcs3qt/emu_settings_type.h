@@ -40,6 +40,7 @@ enum class emu_settings_type
 	ClocksScale,
 	PerformanceReport,
 	FullWidthAVX512,
+	PPULLVMJavaModeHandling,
 
 	// Graphics
 	Renderer,
@@ -70,6 +71,8 @@ enum class emu_settings_type
 	AnisotropicFilterOverride,
 	ResolutionScale,
 	MinimumScalableDimension,
+	FsrUpscalingEnable,
+	FsrSharpeningStrength,
 	ForceCPUBlitEmulation,
 	DisableOnDiskShaderCache,
 	DisableVulkanMemAllocator,
@@ -195,6 +198,7 @@ inline static const QMap<emu_settings_type, cfg_location> settings_location =
 	{ emu_settings_type::PerformanceReport,        { "Core", "Enable Performance Report"}},
 	{ emu_settings_type::FullWidthAVX512,          { "Core", "Full Width AVX-512"}},
 	{ emu_settings_type::NumPPUThreads,            { "Core", "PPU Threads"}},
+	{ emu_settings_type::PPULLVMJavaModeHandling,  { "Core", "PPU LLVM Java Mode Handling"}},
 
 	// Graphics Tab
 	{ emu_settings_type::Renderer,                   { "Video", "Renderer"}},
@@ -238,6 +242,8 @@ inline static const QMap<emu_settings_type, cfg_location> settings_location =
 	// Vulkan
 	{ emu_settings_type::VulkanAsyncTextureUploads,        { "Video", "Vulkan", "Asynchronous Texture Streaming 2"}},
 	{ emu_settings_type::VulkanAsyncSchedulerDriver,       { "Video", "Vulkan", "Asynchronous Queue Scheduler"}},
+	{ emu_settings_type::FsrUpscalingEnable,               { "Video", "Vulkan", "Enable FidelityFX Super Resolution Upscaling"}},
+	{ emu_settings_type::FsrSharpeningStrength,            { "Video", "Vulkan", "FidelityFX CAS Sharpening Intensity"}},
 
 	// Performance Overlay
 	{ emu_settings_type::PerfOverlayEnabled,               { "Video", "Performance Overlay", "Enabled" } },

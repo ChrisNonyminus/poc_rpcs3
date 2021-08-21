@@ -130,8 +130,7 @@ std::string VertexProgramDecompiler::GetSRC(const u32 n)
 		break;
 
 	default:
-		rsx_log.error("Bad src%u reg type: %d", n, u32{ src[n].reg_type });
-		Emu.Pause();
+		rsx_log.fatal("Bad src%u reg type: %d", n, u32{ src[n].reg_type });
 		break;
 	}
 
@@ -330,7 +329,7 @@ std::string VertexProgramDecompiler::AddCondReg()
 
 u32 VertexProgramDecompiler::GetAddr() const
 {
-	return (d2.iaddrh << 3) | d3.iaddrl;
+	return (d0.iaddrh2 << 9) | (d2.iaddrh << 3) | d3.iaddrl;
 }
 
 void VertexProgramDecompiler::AddCode(const std::string& code)

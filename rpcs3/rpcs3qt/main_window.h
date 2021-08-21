@@ -109,13 +109,14 @@ private Q_SLOTS:
 	void Boot(const std::string& path, const std::string& title_id = "", bool direct = false, bool add_only = false, bool force_global_config = false, const std::string& savestate = "");
 	void BootElf();
 	void BootGame();
+	void BootVSH();
 	void BootSavestate();
 	void BootRsxCapture(std::string path = "");
 	void DecryptSPRXLibraries();
 	static void show_boot_error(game_boot_result status);
 
 	void SaveWindowState() const;
-	void ConfigureGuiFromSettings(bool configure_all = false);
+	void ConfigureGuiFromSettings();
 	void SetIconSizeActions(int idx) const;
 	void ResizeIcons(int index);
 

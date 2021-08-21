@@ -36,6 +36,7 @@ target_include_directories(rpcs3_emu
 # Utilities
 target_sources(rpcs3_emu PRIVATE
     ../util/atomic.cpp
+    ../util/media_utils.cpp
     ../util/logs.cpp
     ../util/yaml.cpp
     ../util/vm_native.cpp
@@ -332,6 +333,7 @@ target_sources(rpcs3_emu PRIVATE
     Cell/Modules/sys_rsxaudio_.cpp
     Cell/Modules/sys_spinlock.cpp
     Cell/Modules/sys_spu_.cpp
+    Cell/Modules/libfs_utility_init.cpp
 )
 
 if(NOT MSVC)
@@ -448,6 +450,7 @@ target_sources(rpcs3_emu PRIVATE
 
 if(TARGET 3rdparty_vulkan)
     target_sources(rpcs3_emu PRIVATE
+        RSX/VK/upscalers/fsr1/fsr_pass.cpp
         RSX/VK/vkutils/barriers.cpp
         RSX/VK/vkutils/buffer_object.cpp
         RSX/VK/vkutils/chip_class.cpp

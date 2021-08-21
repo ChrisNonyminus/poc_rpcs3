@@ -2,6 +2,8 @@
 #include "Emu/RSX/GSRender.h"
 #include "Emu/Cell/timers.hpp"
 
+#include "upscalers/upscaling.h"
+
 #include "vkutils/descriptors.hpp"
 #include "vkutils/data_heap.h"
 #include "vkutils/instance.hpp"
@@ -335,6 +337,9 @@ namespace vk
 	};
 }
 
+using namespace vk::vmm_allocation_pool_; // clang workaround.
+using namespace vk::upscaling_flags_;     // ditto
+
 class VKGSRender : public GSRender, public ::rsx::reports::ZCULL_control
 {
 private:
@@ -372,12 +377,13 @@ private:
 	vk::pipeline_props m_pipeline_properties;
 
 	vk::texture_cache m_texture_cache;
-	rsx::vk_render_targets m_rtts;
+	vk::surface_cache m_rtts;
 
 	std::unique_ptr<vk::buffer> null_buffer;
 	std::unique_ptr<vk::buffer_view> null_buffer_view;
 
 	std::unique_ptr<vk::text_writer> m_text_writer;
+	std::unique_ptr<vk::upscaler> m_upscaler;
 
 	std::unique_ptr<vk::buffer> m_cond_render_buffer;
 	u64 m_cond_render_sync_tag = 0;
@@ -512,14 +518,14 @@ private:
 		VkSemaphore signal_semaphore = VK_NULL_HANDLE,
 		VkPipelineStageFlags pipeline_stage_flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
-	void flush_command_queue(bool hard_sync = false);
+	void flush_command_queue(bool hard_sync = false, bool do_not_switch = false);
 	void queue_swap_request();
 	void frame_context_cleanup(vk::frame_context_t *ctx, bool free_resources = false);
 	void advance_queued_frames();
 	void present(vk::frame_context_t *ctx);
 	void reinitialize_swapchain();
 
-	vk::image* get_present_source(vk::present_surface_info* info, const rsx::avconf& avconfig);
+	vk::viewable_image* get_present_source(vk::present_surface_info* info, const rsx::avconf& avconfig);
 
 	void begin_render_pass();
 	void close_render_pass();

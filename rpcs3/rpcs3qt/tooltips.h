@@ -102,6 +102,7 @@ public:
 		const QString accurate_ppu_128_loop        = tr("When enabled, PPU atomic operations will operate on entire cache line data, as opposed to a single 64bit block of memory when disabled.\nNumerical values control whether or not to enable the accurate version based on the atomic operation's length.");
 		const QString enable_performance_report    = tr("Measure certain events and print a chart after the emulator is stopped. Don't enable if not asked to.");
 		const QString num_ppu_threads              = tr("Affects maximum amount of PPU threads running concurrently, the value of 1 has very low compatibility with games.\n2 is the default, if unsure do not modify this setting.");
+		const QString ppu_llvm_java_mode_handling  = tr("Respect current Java Mode for alti-vec ops by PPU LLVM.\nIf unsure do not modify this setting.");
 
 		// emulator
 
@@ -116,6 +117,7 @@ public:
 		const QString disable_kb_hotkeys           = tr("Disables keyboard hotkeys such as Ctrl-S, Ctrl-E, Ctrl-R, Ctrl-P while the game screen is active.\nThis does not include Ctrl-L (hide and lock mouse) and Alt-Enter (toggle fullscreen).\nCheck this if you want to play with mouse and keyboard.");
 		const QString max_llvm_threads             = tr("Limits the maximum number of threads used for the initial PPU and SPU module compilation.\nLower this in order to increase performance of other open applications.\nThe default uses all available threads.");
 		const QString show_mouse_in_fullscreen     = tr("Shows the mouse cursor when the fullscreen mode is active.\nCurrently this may not work every time.");
+		const QString lock_mouse_in_fullscreen     = tr("Locks the mouse cursor at center when the fullscreen mode is active.");
 		const QString hide_mouse_on_idle           = tr("Hides the mouse cursor if no mouse movement is detected for the configured time.");
 		const QString show_shader_compilation_hint = tr("Shows 'Compiling shaders' hint using the native overlay.");
 		const QString use_native_interface         = tr("Enables use of native HUD within the game window that can interact with game controllers.\nWhen disabled, regular Qt dialogs are used instead.\nCurrently, the on-screen keyboard only supports the English key layout.");
@@ -165,11 +167,13 @@ public:
 
 		const QString async_texture_streaming         = tr("Stream textures to GPU in parallel with 3D rendering.\nCan improve performance on more powerful GPUs that have spare headroom.\nOnly works with Vulkan renderer.");
 
+		const QString fsr_upscaling     = tr("Enable FidelityFX Super Resolution upscaling filter to improve the look of upscaled images.\nIf the game is rendering at an internal resolution lower than your window resolution, FidelityFX will handle the upscale.\nCan cause visual artifacts.\nDoes not work with stereo 3D output for now");
+		const QString fsr_rcas_strength = tr("Control the sharpening strength applied by FidelityFX Super Resolution. Higher values will give sharper output but may introduce artifacts.");
+
 		// gui
 
 		const QString log_limit          = tr("Sets the maximum amount of blocks that the log can display.\nThis usually equals the number of lines.\nSet 0 in order to remove the limit.");
 		const QString tty_limit          = tr("Sets the maximum amount of blocks that the tty can display.\nThis usually equals the number of lines.\nSet 0 in order to remove the limit.");
-		const QString configs            = tr("Only useful to developers.\nIf unsure, don't use this option.");
 		const QString stylesheets        = tr("Changes the overall look of RPCS3.\nChoose a stylesheet and click Apply to change between styles.");
 		const QString show_welcome       = tr("Shows the initial welcome screen upon starting RPCS3.");
 		const QString show_exit_game     = tr("Shows a confirmation dialog when the game window is being closed.");
@@ -177,7 +181,7 @@ public:
 		const QString show_pkg_install   = tr("Shows a dialog when packages were installed successfully.");
 		const QString show_pup_install   = tr("Shows a dialog when firmware was installed successfully.");
 		const QString show_obsolete_cfg  = tr("Shows a dialog when obsolete settings were found.");
-		const QString check_update_start = tr("Checks if an update is available on startup and asks if you want to update.\nIf \"Background\" is selected, the check is done silently in the background and a new download option is shown in the top right corner of the menu if a new version was found.");
+		const QString check_update_start = tr("Checks if an update is available on startup and asks if you want to update.\nIf \"Automatic\" is selected, the update will run automatically without user confirmation.\nIf \"Background\" is selected, the check is done silently in the background and a new download option is shown in the top right corner of the menu if a new version was found.");
 		const QString use_rich_presence  = tr("Enables use of Discord Rich Presence to show what game you are playing on Discord.\nRequires a restart of RPCS3 to completely close the connection.");
 		const QString discord_state      = tr("Tell your friends what you are doing.");
 		const QString custom_colors      = tr("Prioritize custom user interface colors over properties set in stylesheet.");
@@ -229,6 +233,7 @@ public:
 		const QString evdev       = tr("The evdev handler should work with any controller that has linux support.<br>If your joystick is not being centered properly, read the <a href=\"https://wiki.rpcs3.net/index.php?title=Help:Controller_Configuration\">RPCS3 Wiki</a> for instructions.");
 		const QString mmjoy       = tr("The MMJoystick handler should work with almost any controller recognized by Windows. However, it is recommended that you use the more specific handlers if you have a controller that supports them.");
 
+		const QString pressure_intensity = tr("Controls the intensity of pressure sensitive buttons while this special button is pressed.<br>Use the percentage to change how hard you want to press a button.");
 		const QString squircle_factor    = tr("The actual DualShock 3's stick range is not circular but formed like a rounded square (or squircle) which represents the maximum range of the emulated sticks. You can use the squircle values to modify the stick input if your sticks can't reach the corners of that range. A value of 0 does not apply any so called squircling. A value of 8000 is usually recommended.");
 		const QString stick_multiplier   = tr("The stick multipliers can be used to change the sensitivity of your stick movements.<br>The default setting is 1 and represents normal input.");
 		const QString stick_deadzones    = tr("A stick's deadzone determines how far the stick has to be moved until it is fully recognized by the game. The resulting range will be projected onto the full input range in order to give you a smooth experience. Movement inside the deadzone is actually simulated as a real DualShock 3's deadzone of ~13%, so don't worry if there is still movement shown in the emulated stick preview.");

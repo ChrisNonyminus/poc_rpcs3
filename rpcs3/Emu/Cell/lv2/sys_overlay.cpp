@@ -65,7 +65,7 @@ fs::file make_file_view(fs::file&&, u64);
 
 std::shared_ptr<void> lv2_overlay::load(utils::serial& ar)
 {
-	const std::string path = ar.operator std::string();
+	const std::string path = vfs::get(ar.operator std::string());
 	const s64 offset = ar;
 
 	std::shared_ptr<lv2_overlay> ovlm;
@@ -90,7 +90,7 @@ std::shared_ptr<void> lv2_overlay::load(utils::serial& ar)
 void lv2_overlay::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(lv2_prx_overlay);
-	ar(path, offset);
+	ar(vfs::retrieve(path), offset);
 }
 
 error_code sys_overlay_load_module(vm::ptr<u32> ovlmid, vm::cptr<char> path, u64 flags, vm::ptr<u32> entry)

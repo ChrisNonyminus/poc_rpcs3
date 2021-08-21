@@ -25,6 +25,7 @@ LOG_CHANNEL(sys_prx);
 // <string: firmware sprx, int: should hle if 1>
 extern const std::map<std::string_view, int> g_prx_list
 {
+	{ "/dev_flash/sys/internal/libfs_utility_init.sprx", 1 },
 	{ "libaacenc.sprx", 0 },
 	{ "libaacenc_spurs.sprx", 0 },
 	{ "libac3dec.sprx", 0 },
@@ -225,7 +226,7 @@ static error_code prx_load_module(const std::string& vpath, u64 flags, vm::ptr<s
 	}
 	else if (vpath0.starts_with("/"))
 	{
-		// Special case (currently unused): HLE for files outside of "/dev_flash/sys/external/"
+		// Special case : HLE for files outside of "/dev_flash/sys/external/"
 		// Have to specify full path for them
 		ignore = g_prx_list.count(vpath0) && g_prx_list.at(vpath0);
 	}
@@ -294,7 +295,7 @@ fs::file make_file_view(fs::file&& _file, u64 offset);
 
 std::shared_ptr<void> lv2_prx::load(utils::serial& ar)
 {
-	const std::string path = ar.operator std::string();
+	const std::string path = vfs::get(ar.operator std::string());
 	const s64 offset = ar;
 	const u32 state = ar;
 
@@ -349,7 +350,7 @@ void lv2_prx::save(utils::serial& ar)
 {
 	USING_SERIALIZATION_VERSION(lv2_prx_overlay);
 
-	ar(path, offset, state);
+	ar(vfs::retrieve(path), offset, state);
 
 	// Save segments count
 	ar.serialize_vle(segs.size());
@@ -639,8 +640,6 @@ error_code _sys_prx_unload_module(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<sy
 {
 	ppu.state += cpu_flag::wait;
 
-	sys_prx.todo("_sys_prx_unload_module(id=0x%x, flags=0x%x, pOpt=*0x%x)", id, flags, pOpt);
-
 	// Get the PRX, free the used memory and delete the object and its ID
 	const auto prx = idm::withdraw<lv2_obj, lv2_prx>(id, [](lv2_prx& prx) -> CellPrxError
 	{
@@ -657,13 +656,15 @@ error_code _sys_prx_unload_module(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<sy
 
 	if (!prx)
 	{
-		return CELL_PRX_ERROR_UNKNOWN_MODULE;
+		return {CELL_PRX_ERROR_UNKNOWN_MODULE, id};
 	}
 
 	if (prx.ret)
 	{
-		return prx.ret;
+		return {prx.ret, "%s (id=%s)", prx->name, id};
 	}
+
+	sys_prx.success("_sys_prx_unload_module(id=0x%x, flags=0x%x, pOpt=*0x%x): name='%s'", id, flags, pOpt, prx->name);
 
 	ppu_unload_prx(*prx);
 

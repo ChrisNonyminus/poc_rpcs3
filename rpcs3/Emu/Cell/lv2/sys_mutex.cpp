@@ -189,7 +189,7 @@ error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout)
 				break;
 			}
 
-			ppu.incomplete_syscall_flag = true;
+			ppu.state += cpu_incomplete_syscall;
 			return {};
 		}
 

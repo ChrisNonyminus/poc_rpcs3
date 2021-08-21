@@ -22,6 +22,7 @@ struct cfg_root : cfg::node
 		cfg::_enum<ppu_decoder_type> ppu_decoder{ this, "PPU Decoder", ppu_decoder_type::llvm };
 		cfg::_int<1, 8> ppu_threads{ this, "PPU Threads", 2 }; // Amount of PPU threads running simultaneously (must be 2)
 		cfg::_bool ppu_debug{ this, "PPU Debug" };
+		cfg::_bool ppu_call_history{ this, "PPU Calling History" }; // Enable PPU calling history recording
 		cfg::_bool llvm_logs{ this, "Save LLVM logs" };
 		cfg::string llvm_cpu{ this, "Use LLVM CPU" };
 		cfg::_int<0, 1024> llvm_threads{ this, "Max LLVM Compile Threads", 0 };
@@ -174,8 +175,10 @@ struct cfg_root : cfg::node
 			cfg::string adapter{ this, "Adapter" };
 			cfg::_bool force_fifo{ this, "Force FIFO present mode" };
 			cfg::_bool force_primitive_restart{ this, "Force primitive restart flag" };
-			cfg::_bool force_disable_exclusive_fullscreen_mode{this, "Force Disable Exclusive Fullscreen Mode"};
+			cfg::_bool force_disable_exclusive_fullscreen_mode{ this, "Force Disable Exclusive Fullscreen Mode" };
 			cfg::_bool asynchronous_texture_streaming{ this, "Asynchronous Texture Streaming 2", false };
+			cfg::_bool fsr_upscaling{ this, "Enable FidelityFX Super Resolution Upscaling", false, true };
+			cfg::uint<0, 100> rcas_sharpening_intensity{ this, "FidelityFX CAS Sharpening Intensity", 50, true };
 			cfg::_enum<vk_gpu_scheduler_mode> asynchronous_scheduler{ this, "Asynchronous Queue Scheduler", vk_gpu_scheduler_mode::device };
 
 		} vk{ this };
@@ -297,8 +300,9 @@ struct cfg_root : cfg::node
 		node_savestate(cfg::node* _this) : cfg::node(_this, "Savestate") {}
 
 		cfg::_bool start_paused{ this, "Start Paused" }; // Pause on first first
-		cfg::_bool suspend_emu{ this, "Suspend Emulation Savestate Mode" }; // Close emulation when saving, delete save after loading
+		cfg::_bool suspend_emu{ this, "Suspend Emulation Savestate Mode", false }; // Close emulation when saving, delete save after loading
 		cfg::_bool state_inspection_mode{ this, "Inspection Mode Savestates" }; // Save memory stored in executable files, thus allowing to view state without any files (for debugging)
+		cfg::_bool save_disc_game_data{ this, "Save Disc Game Data", false };
 	} savestate{this};
 
 	struct node_misc : cfg::node

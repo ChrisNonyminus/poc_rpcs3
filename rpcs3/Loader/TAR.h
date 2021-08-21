@@ -14,8 +14,13 @@ struct TARHeader
 	char magic[6];
 	char dontcare2[82];
 	char prefix[155];
-	char padding[12];
+	char padding[12]; // atime for RPCS3
 };
+
+namespace fs
+{
+	class file;
+}
 
 class tar_object
 {
@@ -33,9 +38,13 @@ public:
 
 	fs::file get_file(const std::string& path);
 
-	// Extract all files in archive to destination as VFS
+	using process_func = std::function<bool(const fs::file&, std::string&, std::vector<u8>&&)>;
+
+	// Extract all files in archive to destination (as VFS if is_vfs is true)
 	// Allow to optionally specify explicit mount point (which may be directory meant for extraction)
-	bool extract(std::string vfs_mp = {});
+	bool extract(std::string prefix_path = {}, bool is_vfs = false);
+
+	static std::vector<u8> save_directory(const std::string& src_dir, std::vector<u8>&& init = std::vector<u8>{}, const process_func& func = {}, std::string append_path = {});
 };
 
-bool extract_tar(const std::string& file_path, const std::string& dir_path);
+bool extract_tar(const std::string& file_path, const std::string& dir_path, fs::file file = {});

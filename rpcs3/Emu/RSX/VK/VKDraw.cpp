@@ -70,7 +70,8 @@ void VKGSRender::update_draw_state()
 {
 	m_profiler.start();
 
-	const float actual_line_width = m_device->get_wide_lines_support()? rsx::method_registers.line_width() : 1.f;
+	const float actual_line_width =
+	    m_device->get_wide_lines_support() ? rsx::method_registers.line_width() * rsx::get_resolution_scale() : 1.f;
 	vkCmdSetLineWidth(*m_current_command_buffer, actual_line_width);
 
 	if (rsx::method_registers.poly_offset_fill_enabled())
@@ -157,6 +158,7 @@ void VKGSRender::load_texture_env()
 		return false;
 	};
 
+	vk::clear_status_interrupt(vk::out_of_memory);
 	std::lock_guard lock(m_sampler_mutex);
 
 	for (u32 textures_ref = current_fp_metadata.referenced_textures_mask, i = 0; textures_ref; textures_ref >>= 1, ++i)
@@ -382,7 +384,10 @@ void VKGSRender::bind_texture_env()
 			if (view = sampler_state->image_handle; !view)
 			{
 				//Requires update, copy subresource
-				view = m_texture_cache.create_temporary_subresource(*m_current_command_buffer, sampler_state->external_subresource_desc);
+				if (!(view = m_texture_cache.create_temporary_subresource(*m_current_command_buffer, sampler_state->external_subresource_desc)))
+				{
+					vk::raise_status_interrupt(vk::out_of_memory);
+				}
 			}
 			else
 			{
@@ -509,8 +514,10 @@ void VKGSRender::bind_texture_env()
 
 		if (!image_ptr && sampler_state->validate())
 		{
-			image_ptr = m_texture_cache.create_temporary_subresource(*m_current_command_buffer, sampler_state->external_subresource_desc);
-			m_vertex_textures_dirty[i] = true;
+			if (!(image_ptr = m_texture_cache.create_temporary_subresource(*m_current_command_buffer, sampler_state->external_subresource_desc)))
+			{
+				vk::raise_status_interrupt(vk::out_of_memory);
+			}
 		}
 
 		if (!image_ptr)
@@ -630,7 +637,10 @@ void VKGSRender::bind_interpreter_texture_env()
 			if (view = sampler_state->image_handle; !view)
 			{
 				//Requires update, copy subresource
-				view = m_texture_cache.create_temporary_subresource(*m_current_command_buffer, sampler_state->external_subresource_desc);
+				if (!(view = m_texture_cache.create_temporary_subresource(*m_current_command_buffer, sampler_state->external_subresource_desc)))
+				{
+					vk::raise_status_interrupt(vk::out_of_memory);
+				}
 			}
 			else
 			{
@@ -703,32 +713,35 @@ void VKGSRender::emit_geometry(u32 sub_index)
 	auto &draw_call = rsx::method_registers.current_draw_clause;
 	m_profiler.start();
 
-	if (sub_index == 0)
+	const flags32_t vertex_state_mask = rsx::vertex_base_changed | rsx::vertex_arrays_changed;
+	const flags32_t vertex_state = (sub_index == 0) ? rsx::vertex_arrays_changed : draw_call.execute_pipeline_dependencies() & vertex_state_mask;
+
+	if (vertex_state & rsx::vertex_arrays_changed)
 	{
 		analyse_inputs_interleaved(m_vertex_layout);
-
-		if (!m_vertex_layout.validate())
-		{
-			// No vertex inputs enabled
-			// Execute remainining pipeline barriers with NOP draw
-			do
-			{
-				draw_call.execute_pipeline_dependencies();
-			}
-			while (draw_call.next());
-
-			draw_call.end();
-			return;
-		}
 	}
-	else if (draw_call.execute_pipeline_dependencies() & rsx::vertex_base_changed)
+	else if (vertex_state & rsx::vertex_base_changed)
 	{
 		// Rebase vertex bases instead of
-		for (auto &info : m_vertex_layout.interleaved_blocks)
+		for (auto& info : m_vertex_layout.interleaved_blocks)
 		{
 			const auto vertex_base_offset = rsx::method_registers.vertex_data_base_offset();
 			info.real_offset_address = rsx::get_address(rsx::get_vertex_offset_from_base(vertex_base_offset, info.base_offset), info.memory_location);
 		}
+	}
+
+	if (vertex_state && !m_vertex_layout.validate())
+	{
+		// No vertex inputs enabled
+		// Execute remainining pipeline barriers with NOP draw
+		do
+		{
+			draw_call.execute_pipeline_dependencies();
+		}
+		while (draw_call.next());
+
+		draw_call.end();
+		return;
 	}
 
 	const auto old_persistent_buffer = m_persistent_attribute_storage ? m_persistent_attribute_storage->value : null_buffer_view->value;
@@ -972,13 +985,40 @@ void VKGSRender::end()
 		ev->gpu_wait(*m_current_command_buffer);
 	}
 
-	if (!m_shader_interpreter.is_interpreter(m_program)) [[likely]]
+	int binding_attempts = 0;
+	while (binding_attempts++ < 3)
 	{
-		bind_texture_env();
-	}
-	else
-	{
-		bind_interpreter_texture_env();
+		if (!m_shader_interpreter.is_interpreter(m_program)) [[likely]]
+		{
+			bind_texture_env();
+		}
+		else
+		{
+			bind_interpreter_texture_env();
+		}
+
+		// TODO: Replace OOO tracking with ref-counting to simplify the logic
+		if (!vk::test_status_interrupt(vk::out_of_memory))
+		{
+			break;
+		}
+
+		if (!on_vram_exhausted(rsx::problem_severity::fatal))
+		{
+			// It is not possible to free memory. Just use placeholder textures. Can cause graphics glitches but shouldn't crash otherwise
+			break;
+		}
+
+		if (m_samplers_dirty)
+		{
+			// Reload texture env if referenced objects were invalidated during OOO handling.
+			load_texture_env();
+		}
+		else
+		{
+			// Nothing to reload, only texture cache references held. Simply attempt to bind again.
+			vk::clear_status_interrupt(vk::out_of_memory);
+		}
 	}
 
 	m_texture_cache.release_uncached_temporary_subresources();

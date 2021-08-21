@@ -23,7 +23,8 @@ namespace vk
 	enum : u32// special remap_encoding enums
 	{
 		VK_REMAP_IDENTITY = 0xCAFEBABE,             // Special view encoding to return an identity image view
-		VK_REMAP_VIEW_MULTISAMPLED = 0xDEADBEEF     // Special encoding for multisampled images; returns a multisampled image view
+		VK_REMAP_VIEW_MULTISAMPLED = 0xDEADBEEF,    // Special encoding for multisampled images; returns a multisampled image view
+		VK_IMAGE_CREATE_ALLOW_NULL = 0x80000000,    // Special flag that allows null images to be created if there is no memory
 	};
 
 	class image
@@ -35,6 +36,10 @@ namespace vk
 
 		void validate(const vk::render_device& dev, const VkImageCreateInfo& info) const;
 
+	protected:
+		image() = default;
+		void create_impl(const vk::render_device& dev, u32 access_flags, const memory_type_info& memory_type, vmm_allocation_pool allocation_pool);
+
 	public:
 		VkImage value = VK_NULL_HANDLE;
 		VkComponentMapping native_component_map = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
@@ -44,7 +49,7 @@ namespace vk
 		std::shared_ptr<vk::memory_block> memory;
 
 		image(const vk::render_device& dev,
-			u32 memory_type_index,
+			const memory_type_info& memory_type,
 			u32 access_flags,
 			VkImageType image_type,
 			VkFormat format,
@@ -55,6 +60,7 @@ namespace vk
 			VkImageTiling tiling,
 			VkImageUsageFlags usage,
 			VkImageCreateFlags image_flags,
+			vmm_allocation_pool allocation_pool,
 			rsx::format_class format_class = RSX_FORMAT_CLASS_UNDEFINED);
 
 		virtual ~image();
@@ -84,7 +90,7 @@ namespace vk
 		// Debug utils
 		void set_debug_name(const std::string& name);
 
-	private:
+	protected:
 		VkDevice m_device;
 	};
 
@@ -118,8 +124,9 @@ namespace vk
 
 	class viewable_image : public image
 	{
-	private:
+	protected:
 		std::unordered_multimap<u32, std::unique_ptr<vk::image_view>> views;
+		viewable_image* clone();
 
 	public:
 		using image::image;

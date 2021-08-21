@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "Utilities/JIT.h"
 #include "Utilities/StrUtil.h"
 #include "util/serialization.hpp"
@@ -117,6 +117,21 @@ void fmt_class_string<ppu_thread_status>::format(std::string& out, u64 arg)
 
 		return unknown;
 	});
+}
+
+template <>
+void fmt_class_string<typename ppu_thread::call_history_t>::format(std::string& out, u64 arg)
+{
+	const auto& history = get_object(arg);
+
+	PPUDisAsm dis_asm(cpu_disasm_mode::normal, vm::g_sudo_addr);
+
+	for (u64 count = 0, idx = history.index - 1; idx != umax && count < ppu_thread::call_history_max_size; count++, idx--)
+	{
+		const u32 pc = history.data[idx % ppu_thread::call_history_max_size];
+		dis_asm.disasm(pc);
+		fmt::append(out, "\n(%u) 0x%08x: %s", count, pc, dis_asm.last_opcode);
+	}
 }
 
 template <>
@@ -514,57 +529,54 @@ static bool ppu_break(ppu_thread& ppu, ppu_opcode_t)
 }
 
 // Set or remove breakpoint
-extern void ppu_breakpoint(u32 addr, bool is_adding)
+extern bool ppu_breakpoint(u32 addr, bool is_adding)
 {
-	if (g_cfg.core.ppu_decoder == ppu_decoder_type::llvm)
+	if (addr % 4 || !vm::check_addr(addr, vm::page_executable) || g_cfg.core.ppu_decoder == ppu_decoder_type::llvm)
 	{
-		return;
+		return false;
 	}
 
 	const u64 _break = reinterpret_cast<uptr>(&ppu_break);
+
+	// Remove breakpoint parameters
+	u64 to_set = 0;
+	u64 expected = _break;
+
+	if (u32 hle_addr{}; g_fxo->is_init<ppu_function_manager>() && (hle_addr = g_fxo->get<ppu_function_manager>().addr))
+	{
+		// HLE function index
+		const u32 index = (addr - hle_addr) / 8;
+
+		if (addr % 8 == 4 && index < ppu_function_manager::get().size())
+		{
+			// HLE function placement
+			to_set = reinterpret_cast<uptr>(ppu_function_manager::get()[index]);
+		}
+	}
+
+	if (!to_set)
+	{
+		// If not an HLE function use regular instruction function
+		to_set = ppu_cache(addr);
+	}
+
+	u64& _ref = ppu_ref(addr);
 
 	if (is_adding)
 	{
-		// Set breakpoint
-		ppu_ref(addr) = _break;
-	}
-	else
-	{
-		// Remove breakpoint
-		ppu_ref(addr) = ppu_cache(addr);
-	}
-}
+		// Swap if adding
+		std::swap(to_set, expected);
 
-//sets breakpoint, does nothing if there is a breakpoint there already
-extern void ppu_set_breakpoint(u32 addr)
-{
-	if (g_cfg.core.ppu_decoder == ppu_decoder_type::llvm)
-	{
-		return;
+		const u64 _fall = reinterpret_cast<uptr>(&ppu_fallback);
+
+		if (_ref == _fall)
+		{
+			ppu_log.error("Unregistered instruction replaced with a breakpoint at 0x%08x", addr);
+			expected = _fall;
+		}
 	}
 
-	const u64 _break = reinterpret_cast<uptr>(&ppu_break);
-
-	if (ppu_ref(addr) != _break)
-	{
-		ppu_ref(addr) = _break;
-	}
-}
-
-//removes breakpoint, does nothing if there is no breakpoint at location
-extern void ppu_remove_breakpoint(u32 addr)
-{
-	if (g_cfg.core.ppu_decoder == ppu_decoder_type::llvm)
-	{
-		return;
-	}
-
-	const auto _break = reinterpret_cast<uptr>(&ppu_break);
-
-	if (ppu_ref(addr) == _break)
-	{
-		ppu_ref(addr) = ppu_cache(addr);
-	}
+	return atomic_storage<u64>::compare_exchange(_ref, expected, to_set);
 }
 
 extern bool ppu_patch(u32 addr, u32 value)
@@ -901,6 +913,22 @@ std::string ppu_thread::dump_misc() const
 	return ret;
 }
 
+std::string ppu_thread::dump_all() const
+{
+	std::string ret = cpu_thread::dump_all();
+
+	if (!call_history.data.empty())
+	{
+		ret +=
+			"\nCalling History:"
+			"\n================";
+
+		fmt::append(ret, "%s", call_history);
+	}
+
+	return ret;
+}
+
 extern thread_local std::string(*g_tls_log_prefix)();
 
 void ppu_thread::cpu_task()
@@ -1193,6 +1221,165 @@ ppu_thread::ppu_thread(const ppu_thread_params& param, std::string_view name, u3
 	{
 		state += cpu_flag::memory;
 	}
+
+	if (g_cfg.core.ppu_call_history)
+	{
+		call_history.data.resize(call_history_max_size);
+	}
+}
+
+struct disable_precomp_t
+{
+	atomic_t<bool> disable = false;
+};
+
+void ppu_thread::serialize_common(utils::serial& ar)
+{
+	ar(gpr, fpr, cr, fpscr.bits, lr, ctr, vrsave, cia, xer, sat, nj, prio, optional_syscall_state);
+
+	for (v128& reg : vr)
+		ar(reg._bytes);
+}
+
+ppu_thread::ppu_thread(utils::serial& ar)
+	: cpu_thread(idm::last_id()) // last_id() is showed to constructor on serialization
+	, stack_size(ar)
+	, stack_addr(ar)
+	, joiner(ar.operator ppu_join_status())
+	, entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar))
+{
+	struct init_pushed
+	{
+		bool pushed = false;
+		atomic_t<bool> inited = false;
+	};
+
+	serialize_common(ar);
+
+	// Restore jm_mask
+	jm_mask = nj ? 0x7F800000 : 0x7fff'ffff;
+
+	switch (const u32 status = ar.operator u32())
+	{
+	case PPU_THREAD_STATUS_IDLE:
+	{
+		stop_flag_removal_protection = true;
+		break;
+	}
+	case PPU_THREAD_STATUS_RUNNABLE:
+	case PPU_THREAD_STATUS_ONPROC:
+	{
+		lv2_obj::awake(this);
+		[[fallthrough]];
+	}
+	case PPU_THREAD_STATUS_SLEEP:
+	{
+		if (std::exchange(g_fxo->get<init_pushed>().pushed, true))
+		{
+			cmd_list
+			({
+				{ppu_cmd::ptr_call, 0}, +[](ppu_thread& ppu) -> bool
+				{
+					while (!Emu.IsStopped() && !g_fxo->get<init_pushed>().inited)
+					{
+						thread_ctrl::wait_on(g_fxo->get<init_pushed>().inited, false);
+					}
+					return false;
+				}
+			});
+		}
+		else
+		{
+			g_fxo->init<disable_precomp_t>();
+			g_fxo->get<disable_precomp_t>().disable = true;
+
+			cmd_push({ppu_cmd::initialize, 0});
+			cmd_list
+			({
+				{ppu_cmd::ptr_call, 0}, +[](ppu_thread&) -> bool
+				{
+					auto& inited = g_fxo->get<init_pushed>().inited;
+					inited = true;
+					inited.notify_all();
+					return true;
+				}
+			});
+		}
+
+		if (status == PPU_THREAD_STATUS_SLEEP)
+		{
+			cmd_list
+			({
+				{ppu_cmd::ptr_call, 0},
+
+				+[](ppu_thread& ppu) -> bool
+				{
+					ppu.loaded_from_savestate = true;
+					ppu_execute_syscall(ppu, ppu.gpr[11]);
+					ppu.loaded_from_savestate = false;
+					return true;
+				}
+			});
+
+			lv2_obj::set_future_sleep(this);
+		}
+
+		cmd_push({ppu_cmd::cia_call, 0});
+		break;
+	}
+	case PPU_THREAD_STATUS_ZOMBIE:
+	{
+		state += cpu_flag::exit;
+		break;
+	}
+	case PPU_THREAD_STATUS_STOP:
+	{
+		break;
+	}
+	}
+
+	// Trigger the scheduler
+	state += cpu_flag::suspend;
+
+	if (!g_use_rtm)
+	{
+		state += cpu_flag::memory;
+	}
+
+	ppu_tname = make_single<std::string>(ar.operator std::string());
+}
+
+void ppu_thread::save(utils::serial& ar)
+{
+	const u64 entry = std::bit_cast<u64>(entry_func);
+
+	ppu_join_status _joiner = joiner;
+	if (_joiner >= ppu_join_status::max)
+	{
+		// Joining thread should recover this member properly
+		_joiner = ppu_join_status::joinable; 
+	}
+
+	if (state & cpu_flag::incomplete_syscall)
+	{
+		std::memcpy(&gpr[3], syscall_args, sizeof(syscall_args));
+		cia -= 4;
+	}
+
+	ar(stack_size, stack_addr, _joiner, entry);
+	serialize_common(ar);
+
+	ppu_thread_status status = lv2_obj::ppu_state(this, false);
+
+	if (status == PPU_THREAD_STATUS_SLEEP && state.none_of(cpu_flag::incomplete_syscall))
+	{
+		// Hack for sys_fs
+		status = PPU_THREAD_STATUS_RUNNABLE;
+	}
+
+	ar(status);
+
+	ar(*ppu_tname.load());
 }
 
 struct disable_precomp_t
@@ -1491,26 +1678,31 @@ void ppu_thread::fast_call(u32 addr, u64 rtoc)
 	at_ret();
 }
 
-u32 ppu_thread::stack_push(u32 size, u32 align_v)
+std::pair<vm::addr_t, u32> ppu_thread::stack_push(u32 size, u32 align_v)
 {
 	if (auto cpu = get_current_cpu_thread<ppu_thread>())
 	{
 		ppu_thread& context = static_cast<ppu_thread&>(*cpu);
 
 		const u32 old_pos = vm::cast(context.gpr[1]);
-		context.gpr[1] -= utils::align(size + 4, 8); // room minimal possible size
+		context.gpr[1] -= size; // room minimal possible size
 		context.gpr[1] &= ~(u64{align_v} - 1); // fix stack alignment
 
-		if (old_pos >= context.stack_addr && old_pos < context.stack_addr + context.stack_size && context.gpr[1] < context.stack_addr)
+		auto is_stack = [&](u64 addr)
+		{
+			return addr >= context.stack_addr && addr < context.stack_addr + context.stack_size;
+		};
+
+		// TODO: This check does not care about custom stack memory
+		if (is_stack(old_pos) != is_stack(context.gpr[1]))
 		{
 			fmt::throw_exception("Stack overflow (size=0x%x, align=0x%x, SP=0x%llx, stack=*0x%x)", size, align_v, old_pos, context.stack_addr);
 		}
 		else
 		{
 			const u32 addr = static_cast<u32>(context.gpr[1]);
-			vm::_ref<nse_t<u32>>(addr + size) = old_pos;
 			std::memset(vm::base(addr), 0, size);
-			return addr;
+			return {vm::cast(addr), old_pos - addr};
 		}
 	}
 
@@ -1529,7 +1721,7 @@ void ppu_thread::stack_pop_verbose(u32 addr, u32 size) noexcept
 			return;
 		}
 
-		context.gpr[1] = vm::_ref<nse_t<u32>>(static_cast<u32>(context.gpr[1]) + size);
+		context.gpr[1] += size;
 		return;
 	}
 
@@ -3221,6 +3413,9 @@ bool ppu_initialize(const ppu_module& info, bool check_only)
 			if (!jit && !check_only)
 			{
 				ppu_log.success("LLVM: Module exists: %s", obj_name);
+
+				// Update progress dialog
+				g_progr_pdone++;
 			}
 
 			continue;

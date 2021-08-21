@@ -285,6 +285,9 @@ public:
 
 	std::set<std::string> GetGameDirs() const;
 
+	// Check if path is inside the specified directory
+	bool IsPathInsideDir(std::string_view path, std::string_view dir) const;
+
 	friend void init_fxo_for_exec(utils::serial*, bool);
 };
 

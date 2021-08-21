@@ -105,6 +105,8 @@ std::shared_ptr<lv2_event_queue> lv2_event_queue::find(u64 ipc_key)
 	return g_fxo->get<ipc_manager<lv2_event_queue, u64>>().get(ipc_key);
 }
 
+extern void resume_spu_thread_group_from_waiting(spu_thread& spu);
+
 CellError lv2_event_queue::send(lv2_event event)
 {
 	std::lock_guard lock(mutex);
@@ -131,13 +133,15 @@ CellError lv2_event_queue::send(lv2_event event)
 		// Store event in registers
 		auto& ppu = static_cast<ppu_thread&>(*schedule<ppu_thread>(sq, protocol));
 
-		if (ppu.incomplete_syscall_flag)
+		if (ppu.state & cpu_flag::incomplete_syscall)
 		{
-			if (auto cpu = get_current_cpu_thread<ppu_thread>())
+			if (auto cpu = get_current_cpu_thread())
 			{
-				cpu->incomplete_syscall_flag = true;
+				cpu->state += cpu_incomplete_syscall;
 				cpu->state += cpu_flag::exit;
 			}
+
+			sys_event.warning("Ignored event!");
 
 			// Fake error for abort
 			return CELL_EAGAIN;
@@ -150,30 +154,26 @@ CellError lv2_event_queue::send(lv2_event event)
 	else
 	{
 		// Store event in In_MBox
-		auto& spu = static_cast<spu_thread&>(*sq.front());
-
-		if (spu.incomplete_syscall_flag)
+		auto& spu = static_cast<spu_thread&>(*schedule<spu_thread>(sq, protocol));
+	
+		if (spu.state & cpu_flag::incomplete_syscall)
 		{
-			if (auto cpu = get_current_cpu_thread<ppu_thread>())
+			if (auto cpu = get_current_cpu_thread())
 			{
-				cpu->incomplete_syscall_flag = true;
-				cpu->state += cpu_flag::exit;
+				cpu->state += cpu_flag::exit + cpu_flag::incomplete_syscall;
 			}
+
+			sys_event.warning("Ignored event!");
 
 			// Fake error for abort
 			return CELL_EAGAIN;
 		}
 
-		// TODO: use protocol?
-		sq.pop_front();
-
 		const u32 data1 = static_cast<u32>(std::get<1>(event));
 		const u32 data2 = static_cast<u32>(std::get<2>(event));
 		const u32 data3 = static_cast<u32>(std::get<3>(event));
 		spu.ch_in_mbox.set_values(4, CELL_OK, data1, data2, data3);
-
-		spu.state += cpu_flag::signal;
-		spu.state.notify_one(cpu_flag::signal);
+		resume_spu_thread_group_from_waiting(spu);
 	}
 
 	return {};
@@ -258,11 +258,15 @@ error_code sys_event_queue_destroy(ppu_thread& ppu, u32 equeue_id, s32 mode)
 
 	if (mode == SYS_EVENT_QUEUE_DESTROY_FORCE)
 	{
+		std::deque<cpu_thread*> sq;
+
 		std::lock_guard lock(queue->mutex);
 
+		sq = std::move(queue->sq);
+	
 		if (queue->type == SYS_PPU_QUEUE)
 		{
-			for (auto cpu : queue->sq)
+			for (auto cpu : sq)
 			{
 				static_cast<ppu_thread&>(*cpu).gpr[3] = CELL_ECANCELED;
 				queue->append(cpu);
@@ -275,11 +279,10 @@ error_code sys_event_queue_destroy(ppu_thread& ppu, u32 equeue_id, s32 mode)
 		}
 		else
 		{
-			for (auto cpu : queue->sq)
+			for (auto cpu : sq)
 			{
 				static_cast<spu_thread&>(*cpu).ch_in_mbox.set_values(1, CELL_ECANCELED);
-				cpu->state += cpu_flag::signal;
-				cpu->state.notify_one(cpu_flag::signal);
+				resume_spu_thread_group_from_waiting(static_cast<spu_thread&>(*cpu));
 			}
 		}
 	}
@@ -340,6 +343,14 @@ error_code sys_event_queue_receive(ppu_thread& ppu, u32 equeue_id, vm::ptr<sys_e
 
 		std::lock_guard lock(queue.mutex);
 
+		// "/dev_flash/vsh/module/msmw2.sprx" seems to rely on some cryptic shared memory behaviour that we don't emulate correctly
+		// This is a hack to avoid waiting for 1m40s every time we boot vsh
+		if (queue.key == 0x8005911000000012 && g_ps3_process_info.get_cellos_appname() == "vsh.self"sv)
+		{
+			sys_event.todo("sys_event_queue_receive(equeue_id=0x%x, *0x%x, timeout=0x%llx) Bypassing timeout for msmw2.sprx", equeue_id, dummy_event, timeout);
+			timeout = 1;
+		}
+
 		if (queue.events.empty())
 		{
 			queue.sq.emplace_back(&ppu);
@@ -379,6 +390,9 @@ error_code sys_event_queue_receive(ppu_thread& ppu, u32 equeue_id, vm::ptr<sys_e
 
 		if (is_stopped(state))
 		{
+			extern std::unique_lock<shared_mutex> lock_sys_rsx_mutex();
+			auto lock_rsx = lock_sys_rsx_mutex();
+
 			std::lock_guard lock(queue->mutex);
 
 			if (std::find(queue->sq.begin(), queue->sq.end(), &ppu) == queue->sq.end())
@@ -386,7 +400,7 @@ error_code sys_event_queue_receive(ppu_thread& ppu, u32 equeue_id, vm::ptr<sys_e
 				break;
 			}
 
-			ppu.incomplete_syscall_flag = true;
+			ppu.state += cpu_incomplete_syscall;
 			extern void signal_gcm_intr_thread_offline(u32 equeue_id);
 			signal_gcm_intr_thread_offline(equeue_id);
 			return {};

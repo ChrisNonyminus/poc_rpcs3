@@ -8,6 +8,7 @@
 #include "rsx_vertex_data.h"
 #include "rsx_utils.h"
 #include "Emu/Cell/timers.hpp"
+#include "Program/program_util.h"
 
 namespace rsx
 {
@@ -23,13 +24,15 @@ namespace rsx
 	{
 		primitive_restart_barrier,
 		vertex_base_modifier_barrier,
-		index_base_modifier_barrier
+		index_base_modifier_barrier,
+		vertex_array_offset_modifier_barrier
 	};
 
 	enum command_execution_flags : u32
 	{
 		vertex_base_changed = (1 << 0),
-		index_base_changed = (1 << 1)
+		index_base_changed = (1 << 1),
+		vertex_arrays_changed = (1 << 2),
 	};
 
 	struct barrier_t
@@ -38,6 +41,7 @@ namespace rsx
 		u64 timestamp;
 
 		u32 address;
+		u32 index;
 		u32 arg;
 		u32 flags;
 		command_barrier_type type;
@@ -111,47 +115,7 @@ namespace rsx
 
 		simple_array<u32> inline_vertex_array{};
 
-		void insert_command_barrier(command_barrier_type type, u32 arg)
-		{
-			ensure(!draw_command_ranges.empty());
-
-			auto _do_barrier_insert = [this](barrier_t&& val)
-			{
-				if (draw_command_barriers.empty() || draw_command_barriers.back() < val)
-				{
-					draw_command_barriers.push_back(val);
-					return;
-				}
-
-				for (auto it = draw_command_barriers.begin(); it != draw_command_barriers.end(); it++)
-				{
-					if (*it < val)
-					{
-						continue;
-					}
-
-					draw_command_barriers.insert(it, val);
-					break;
-				}
-			};
-
-			if (type == primitive_restart_barrier)
-			{
-				// Rasterization flow barrier
-				const auto& last = draw_command_ranges[current_range_index];
-				const auto address = last.first + last.count;
-
-				_do_barrier_insert({ current_range_index, 0, address, arg, 0, type });
-			}
-			else
-			{
-				// Execution dependency barrier
-				append_draw_command({});
-
-				_do_barrier_insert({ current_range_index, get_system_time(), ~0u, arg, 0, type });
-				last_execution_barrier_index = current_range_index;
-			}
-		}
+		void insert_command_barrier(command_barrier_type type, u32 arg, u32 register_index = 0);
 
 		/**
 		 * Optimize commands for rendering
@@ -492,7 +456,7 @@ namespace rsx
 		std::array<vertex_texture, 4> vertex_textures;
 
 
-		std::array<u32, 512 * 4> transform_program{};
+		std::array<u32, max_vertex_program_instructions * 4> transform_program{};
 		std::array<u32[4], 512> transform_constants{};
 
 		draw_clause current_draw_clause{};
@@ -631,7 +595,7 @@ namespace rsx
 
 		u32 window_clip_vertical() const
 		{
-			return registers[NV4097_SET_WINDOW_CLIP_HORIZONTAL];
+			return registers[NV4097_SET_WINDOW_CLIP_VERTICAL];
 		}
 
 		bool depth_test_enabled() const
@@ -1142,64 +1106,37 @@ namespace rsx
 			return decode<NV4097_SET_SURFACE_CLIP_VERTICAL>().height();
 		}
 
-		u32 surface_a_offset() const
+		u32 surface_offset(u32 index) const
 		{
-			return decode<NV4097_SET_SURFACE_COLOR_AOFFSET>().surface_a_offset();
+			switch (index)
+			{
+			case 0: return decode<NV4097_SET_SURFACE_COLOR_AOFFSET>().surface_a_offset();
+			case 1: return decode<NV4097_SET_SURFACE_COLOR_BOFFSET>().surface_b_offset();
+			case 2: return decode<NV4097_SET_SURFACE_COLOR_COFFSET>().surface_c_offset();
+			default: return decode<NV4097_SET_SURFACE_COLOR_DOFFSET>().surface_d_offset();
+			}
 		}
 
-		u32 surface_b_offset() const
+		u32 surface_pitch(u32 index) const
 		{
-			return decode<NV4097_SET_SURFACE_COLOR_BOFFSET>().surface_b_offset();
+			switch (index)
+			{
+			case 0: return decode<NV4097_SET_SURFACE_PITCH_A>().surface_a_pitch();
+			case 1: return decode<NV4097_SET_SURFACE_PITCH_B>().surface_b_pitch();
+			case 2: return decode<NV4097_SET_SURFACE_PITCH_C>().surface_c_pitch();
+			default: return decode<NV4097_SET_SURFACE_PITCH_D>().surface_d_pitch();
+			}
 		}
 
-		u32 surface_c_offset() const
+		u32 surface_dma(u32 index) const
 		{
-			return decode<NV4097_SET_SURFACE_COLOR_COFFSET>().surface_c_offset();
-		}
-
-		u32 surface_d_offset() const
-		{
-			return decode<NV4097_SET_SURFACE_COLOR_DOFFSET>().surface_d_offset();
-		}
-
-		u32 surface_a_pitch() const
-		{
-			return decode<NV4097_SET_SURFACE_PITCH_A>().surface_a_pitch();
-		}
-
-		u32 surface_b_pitch() const
-		{
-			return decode<NV4097_SET_SURFACE_PITCH_B>().surface_b_pitch();
-		}
-
-		u32 surface_c_pitch() const
-		{
-			return decode<NV4097_SET_SURFACE_PITCH_C>().surface_c_pitch();
-		}
-
-		u32 surface_d_pitch() const
-		{
-			return decode<NV4097_SET_SURFACE_PITCH_D>().surface_d_pitch();
-		}
-
-		u32 surface_a_dma() const
-		{
-			return decode<NV4097_SET_CONTEXT_DMA_COLOR_A>().dma_surface_a();
-		}
-
-		u32 surface_b_dma() const
-		{
-			return decode<NV4097_SET_CONTEXT_DMA_COLOR_B>().dma_surface_b();
-		}
-
-		u32 surface_c_dma() const
-		{
-			return decode<NV4097_SET_CONTEXT_DMA_COLOR_C>().dma_surface_c();
-		}
-
-		u32 surface_d_dma() const
-		{
-			return decode<NV4097_SET_CONTEXT_DMA_COLOR_D>().dma_surface_d();
+			switch (index)
+			{
+			case 0: return decode<NV4097_SET_CONTEXT_DMA_COLOR_A>().dma_surface_a();
+			case 1: return decode<NV4097_SET_CONTEXT_DMA_COLOR_B>().dma_surface_b();
+			case 2: return decode<NV4097_SET_CONTEXT_DMA_COLOR_C>().dma_surface_c();
+			default: return decode<NV4097_SET_CONTEXT_DMA_COLOR_D>().dma_surface_d();
+			}
 		}
 
 		u32 surface_z_offset() const

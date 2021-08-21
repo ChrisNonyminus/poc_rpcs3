@@ -188,6 +188,7 @@
     </widget>
     <addaction name="bootElfAct"/>
     <addaction name="bootGameAct"/>
+    <addaction name="bootVSHAct"/>
     <addaction name="bootSavestateAct"/>
     <addaction name="bootRecentMenu"/>
     <addaction name="separator"/>
@@ -1167,6 +1168,11 @@
    </property>
    <property name="text">
     <string>Play Hover Gifs</string>
+   </property>
+  </action>
+  <action name="bootVSHAct">
+   <property name="text">
+    <string>Boot VSH/XMB</string>
    </property>
   </action>
  </widget>

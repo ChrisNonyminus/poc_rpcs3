@@ -147,9 +147,9 @@ error_code sys_cond_signal(ppu_thread& ppu, u32 cond_id)
 
 			if (const auto cpu = cond.schedule<ppu_thread>(cond.sq, cond.mutex->protocol))
 			{
-				if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.incomplete_syscall_flag = true;
+					ppu.state += cpu_flag::incomplete_syscall;
 					ppu.state += cpu_flag::exit;
 					return;
 				}
@@ -187,9 +187,9 @@ error_code sys_cond_signal_all(ppu_thread& ppu, u32 cond_id)
 
 			for (auto cpu : cond.sq)
 			{
-				if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.incomplete_syscall_flag = true;
+					ppu.state += cpu_flag::incomplete_syscall;
 					ppu.state += cpu_flag::exit;
 					return;
 				}
@@ -242,9 +242,9 @@ error_code sys_cond_signal_to(ppu_thread& ppu, u32 cond_id, u32 thread_id)
 			{
 				if (cpu->id == thread_id)
 				{
-					if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+					if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 					{
-						ppu.incomplete_syscall_flag = true;
+						ppu.state += cpu_flag::incomplete_syscall;
 						ppu.state += cpu_flag::exit;
 						return 0;
 					}
@@ -360,7 +360,7 @@ error_code sys_cond_wait(ppu_thread& ppu, u32 cond_id, u64 timeout)
 			}
 
 			ppu.optional_syscall_state = u32{mutex_sleep} | (u64{static_cast<u32>(cond.ret)} << 32);
-			ppu.incomplete_syscall_flag = true;
+			ppu.state += cpu_flag::incomplete_syscall;
 			ppu.state += cpu_flag::exit;
 			return {}; // !!!
 		}

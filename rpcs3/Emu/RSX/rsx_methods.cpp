@@ -467,13 +467,10 @@ namespace rsx
 				u32 rcount = count;
 
 				if (const u32 max = load_pos * 4 + rcount + (index % 4);
-					max > 512 * 4)
+					max > max_vertex_program_instructions * 4)
 				{
-					// PS3 seems to allow exceeding the program buffer by upto 32 instructions before crashing
-					// Discard the "excess" instructions to not overflow our transform program buffer
-					// TODO: Check if the instructions in the overflow area are executed by PS3
-					rsx_log.warning("Program buffer overflow!");
-					rcount -= max - (512 * 4);
+					rsx_log.warning("Program buffer overflow! Attempted to write %u VP instructions.", max / 4);
+					rcount -= max - (max_vertex_program_instructions * 4);
 				}
 
 				stream_data_to_memory_swapped_u32<true>(&rsx::method_registers.transform_program[load_pos * 4 + index % 4]
@@ -782,6 +779,24 @@ namespace rsx
 			}
 		}
 
+		template<u32 index>
+		struct set_vertex_array_offset
+		{
+			static void impl(thread* rsx, u32 reg, u32 arg)
+			{
+				if (rsx->in_begin_end &&
+					!rsx::method_registers.current_draw_clause.empty() &&
+					reg != method_registers.register_previous_value)
+				{
+					// Revert change to queue later
+					method_registers.decode(reg, method_registers.register_previous_value);
+
+					// Insert offset mofifier barrier
+					method_registers.current_draw_clause.insert_command_barrier(vertex_array_offset_modifier_barrier, arg, index);
+				}
+			}
+		};
+
 		void check_index_array_dma(thread* rsx, u32 reg, u32 arg)
 		{
 			// Check if either location or index type are invalid
@@ -910,8 +925,8 @@ namespace rsx
 				const u32 x = method_registers.nv308a_x() + index;
 				const u32 y = method_registers.nv308a_y();
 
-				// TODO
-				//auto res = vm::passive_lock(address, address + write_len);
+				// Skip "handled methods"
+				rsx->fifo_ctrl->skip_methods(count - 1);
 
 				switch (method_registers.blit_engine_nv3062_color_format())
 				{
@@ -920,12 +935,21 @@ namespace rsx
 				{
 					// Bit cast - optimize to mem copy
 
-					const auto dst_address = get_address(dst_offset + (x * 4) + (out_pitch * y), dst_dma);
+					const u32 data_length = count * 4;
+
+					const auto dst_address = get_address(dst_offset + (x * 4) + (out_pitch * y), dst_dma, data_length);
+
+					if (!dst_address)
+					{
+						rsx->recover_fifo();
+						return;
+					}
+
 					const auto src_address = get_address(src_offset, CELL_GCM_LOCATION_MAIN);
+
 					const auto dst = vm::_ptr<u8>(dst_address);
 					const auto src = vm::_ptr<const u8>(src_address);
 
-					const u32 data_length = count * 4;
 					auto res = rsx::reservation_lock<true>(dst_address, data_length, src_address, data_length);
 
 					if (rsx->fifo_ctrl->last_cmd() & RSX_METHOD_NON_INCREMENT_CMD_MASK) [[unlikely]]
@@ -954,12 +978,19 @@ namespace rsx
 				}
 				case blit_engine::transfer_destination_format::r5g6b5:
 				{
-					const auto dst_address = get_address(dst_offset + (x * 2) + (y * out_pitch), dst_dma);
+					const auto data_length = count * 2;
+
+					const auto dst_address = get_address(dst_offset + (x * 2) + (y * out_pitch), dst_dma, data_length);
 					const auto src_address = get_address(src_offset, CELL_GCM_LOCATION_MAIN);
 					const auto dst = vm::_ptr<u16>(dst_address);
 					const auto src = vm::_ptr<const u32>(src_address);
 
-					const auto data_length = count * 2;
+					if (!dst_address)
+					{
+						rsx->recover_fifo();
+						return;
+					}
+
 					auto res = rsx::reservation_lock<true>(dst_address, data_length, src_address, data_length);
 
 					auto convert = [](u32 input) -> u16
@@ -996,11 +1027,6 @@ namespace rsx
 					fmt::throw_exception("Unreachable");
 				}
 				}
-
-				//res->release(0);
-
-				// Skip "handled methods"
-				rsx->fifo_ctrl->skip_methods(count - 1);
 			}
 		};
 	}
@@ -1064,7 +1090,16 @@ namespace rsx
 
 			if (operation != rsx::blit_engine::transfer_operation::srccopy)
 			{
-				fmt::throw_exception("NV3089_IMAGE_IN_SIZE: unknown operation (%d)", static_cast<u8>(operation));
+				rsx_log.error("NV3089_IMAGE_IN_SIZE: unknown operation (0x%x)", method_registers.registers[NV3089_SET_OPERATION]);
+				rsx->recover_fifo();
+				return;
+			}
+
+			if (src_color_format == rsx::blit_engine::transfer_source_format::invalid)
+			{
+				rsx_log.error("NV3089_IMAGE_IN_SIZE: unknown src color format (0x%x)", method_registers.registers[NV3089_SET_COLOR_FORMAT]);
+				rsx->recover_fifo();
+				return;
 			}
 
 			const u32 src_offset = method_registers.blit_engine_input_offset();
@@ -1087,6 +1122,14 @@ namespace rsx
 				out_pitch = method_registers.blit_engine_output_pitch_nv3062();
 				out_alignment = method_registers.blit_engine_output_alignment_nv3062();
 				is_block_transfer = fcmp(scale_x, 1.f) && fcmp(scale_y, 1.f);
+
+				if (dst_color_format == rsx::blit_engine::transfer_destination_format::invalid)
+				{
+					rsx_log.error("NV3089_IMAGE_IN_SIZE: unknown NV3062 dst color format (0x%x)", method_registers.registers[NV3062_SET_COLOR_FORMAT]);
+					rsx->recover_fifo();
+					return;
+				}
+
 				break;
 			}
 			case blit_engine::context_surface::swizzle2d:
@@ -1094,6 +1137,14 @@ namespace rsx
 				dst_dma = method_registers.blit_engine_nv309E_location();
 				dst_offset = method_registers.blit_engine_nv309E_offset();
 				dst_color_format = method_registers.blit_engine_output_format_nv309E();
+
+				if (dst_color_format == rsx::blit_engine::transfer_destination_format::invalid)
+				{
+					rsx_log.error("NV3089_IMAGE_IN_SIZE: unknown NV309E dst color format (0x%x)", method_registers.registers[NV309E_SET_FORMAT]);
+					rsx->recover_fifo();
+					return;
+				}
+
 				break;
 			}
 			default:
@@ -1145,25 +1196,22 @@ namespace rsx
 			const u32 in_offset = in_x * in_bpp + in_pitch * in_y;
 			const u32 out_offset = out_x * out_bpp + out_pitch * out_y;
 
-			const u32 src_address = get_address(src_offset, src_dma);
-			const u32 dst_address = get_address(dst_offset, dst_dma);
-
-			if (src_address == dst_address &&
-				in_w == clip_w && in_h == clip_h &&
-				in_pitch == out_pitch &&
-				rsx::fcmp(scale_x, 1.f) && rsx::fcmp(scale_y, 1.f))
-			{
-				// NULL operation
-				rsx_log.warning("NV3089_IMAGE_IN: Operation writes memory onto itself with no modification (move-to-self). Will ignore.");
-				return;
-			}
-
 			const u32 src_line_length = (in_w * in_bpp);
+
+			u32 src_address = 0;
+			const u32 dst_address = get_address(dst_offset, dst_dma, 1); // TODO: Add size
 
 			if (is_block_transfer && (clip_h == 1 || (in_pitch == out_pitch && src_line_length == in_pitch)))
 			{
 				const u32 nb_lines = std::min(clip_h, in_h);
 				const u32 data_length = nb_lines * src_line_length;
+
+				if (src_address = get_address(src_offset, src_dma, data_length);
+					!src_address || !dst_address)
+				{
+					rsx->recover_fifo();
+					return;
+				}
 
 				rsx->invalidate_fragment_program(dst_dma, dst_offset, data_length);
 
@@ -1179,10 +1227,28 @@ namespace rsx
 			}
 			else
 			{
-				const u32 data_length = in_pitch * (in_h - 1) + src_line_length;
+				const u16 read_h = std::min(static_cast<u16>(clip_h / scale_y), in_h);
+				const u32 data_length = in_pitch * (read_h - 1) + src_line_length;
+
+				if (src_address = get_address(src_offset, src_dma, data_length);
+					!src_address || !dst_address)
+				{
+					rsx->recover_fifo();
+					return;
+				}
 
 				rsx->invalidate_fragment_program(dst_dma, dst_offset, data_length);
 				rsx->read_barrier(src_address, data_length, true);
+			}
+
+			if (src_address == dst_address &&
+				in_w == clip_w && in_h == clip_h &&
+				in_pitch == out_pitch &&
+				rsx::fcmp(scale_x, 1.f) && rsx::fcmp(scale_y, 1.f))
+			{
+				// NULL operation
+				rsx_log.warning("NV3089_IMAGE_IN: Operation writes memory onto itself with no modification (move-to-self). Will ignore.");
+				return;
 			}
 
 			u8* pixels_src = vm::_ptr<u8>(src_address + in_offset);
@@ -2640,6 +2706,56 @@ namespace rsx
 		return registers[reg] == value;
 	}
 
+	void draw_clause::insert_command_barrier(command_barrier_type type, u32 arg, u32 index)
+	{
+		ensure(!draw_command_ranges.empty());
+
+		auto _do_barrier_insert = [this](barrier_t&& val)
+		{
+			if (draw_command_barriers.empty() || draw_command_barriers.back() < val)
+			{
+				draw_command_barriers.push_back(val);
+				return;
+			}
+
+			for (auto it = draw_command_barriers.begin(); it != draw_command_barriers.end(); it++)
+			{
+				if (*it < val)
+				{
+					continue;
+				}
+
+				draw_command_barriers.insert(it, val);
+				break;
+			}
+		};
+
+		if (type == primitive_restart_barrier)
+		{
+			// Rasterization flow barrier
+			const auto& last = draw_command_ranges[current_range_index];
+			const auto address = last.first + last.count;
+
+			_do_barrier_insert({ current_range_index, 0, address, index, arg, 0, type });
+		}
+		else
+		{
+			// Execution dependency barrier. Requires breaking the current draw call sequence and start another.
+			if (draw_command_ranges.back().count > 0)
+			{
+				append_draw_command({});
+			}
+			else
+			{
+				// In case of back-to-back modifiers, do not add duplicates
+				current_range_index = draw_command_ranges.size() - 1;
+			}
+
+			_do_barrier_insert({ current_range_index, get_system_time(), ~0u, index, arg, 0, type });
+			last_execution_barrier_index = current_range_index;
+		}
+	}
+
 	void draw_clause::reset(primitive_type type)
 	{
 		current_range_index = ~0u;
@@ -2678,6 +2794,11 @@ namespace rsx
 				// Change vertex base offset
 				method_registers.decode(NV4097_SET_VERTEX_DATA_BASE_OFFSET, barrier.arg);
 				result |= vertex_base_changed;
+				break;
+			case vertex_array_offset_modifier_barrier:
+				// Change vertex array offset
+				method_registers.decode(NV4097_SET_VERTEX_DATA_ARRAY_OFFSET + barrier.index, barrier.arg);
+				result |= vertex_arrays_changed;
 				break;
 			default:
 				fmt::throw_exception("Unreachable");
@@ -3190,6 +3311,7 @@ namespace rsx
 		bind<NV4097_SET_VERTEX_ATTRIB_OUTPUT_MASK, nv4097::set_vertex_attribute_output_mask>();
 		bind<NV4097_SET_VERTEX_DATA_BASE_OFFSET, nv4097::set_vertex_base_offset>();
 		bind<NV4097_SET_VERTEX_DATA_BASE_INDEX, nv4097::set_index_base_offset>();
+		bind_range<NV4097_SET_VERTEX_DATA_ARRAY_OFFSET, 1, 16, nv4097::set_vertex_array_offset>();
 		bind<NV4097_SET_USER_CLIP_PLANE_CONTROL, nv4097::notify_state_changed<vertex_state_dirty>>();
 		bind<NV4097_SET_TRANSFORM_BRANCH_BITS, nv4097::notify_state_changed<vertex_state_dirty>>();
 		bind<NV4097_SET_CLIP_MIN, nv4097::notify_state_changed<invalidate_zclip_bits>>();

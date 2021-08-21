@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Emu/Io/pad_types.h"
+
 #include <array>
 #include "util/types.hpp"
 
@@ -201,3 +203,7 @@ struct pad_info
 	pad_info(utils::serial& ar);
 	void save(utils::serial& ar);
 };
+
+error_code cellPadGetData(u32 port_no, vm::ptr<CellPadData> data);
+error_code cellPadInit(u32 max_connect);
+error_code cellPadSetPortSetting(u32 port_no, u32 port_setting);

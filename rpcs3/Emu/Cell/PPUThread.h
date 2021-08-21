@@ -135,6 +135,7 @@ public:
 	virtual std::string dump_callstack() const override;
 	virtual std::vector<std::pair<u32, u32>> dump_callstack_list() const override;
 	virtual std::string dump_misc() const override;
+	virtual std::string dump_all() const override;
 	virtual void cpu_task() override final;
 	virtual void cpu_sleep() override;
 	virtual void cpu_on_stop() override;
@@ -147,6 +148,8 @@ public:
 	bool savable() const { return joiner != ppu_join_status::exited; }
 	void serialize_common(utils::serial& ar);
 	void save(utils::serial& ar);
+
+	using cpu_thread::operator=;
 
 	u64 gpr[32] = {}; // General-Purpose Registers
 	f64 fpr[32] = {}; // Floating Point Registers
@@ -300,6 +303,16 @@ public:
 
 	u32 dbg_step_pc = 0;
 
+	struct call_history_t
+	{
+		std::vector<u32> data;
+		u64 index = 0;
+		u64 last_r1 = umax;
+		u64 last_r2 = umax;
+	} call_history;
+
+	static constexpr u32 call_history_max_size = 4096;
+
 	// For named_thread ctor
 	const struct thread_name_t
 	{
@@ -310,7 +323,6 @@ public:
 
 	// For savestates
 	bool stop_flag_removal_protection = false; // If set, Emulator::Run won't remove stop flag 
-	bool incomplete_syscall_flag = false; // If set, CIA won't advance on syscall end
 	bool loaded_from_savestate = false; // Indicates the thread had just started straight from savestate load
 	u64 optional_syscall_state{};
 	bool interrupt_thread_executing = false; // Hack (TODO)
@@ -319,7 +331,7 @@ public:
 	void exec_task();
 	void fast_call(u32 addr, u64 rtoc);
 
-	static u32 stack_push(u32 size, u32 align_v);
+	static std::pair<vm::addr_t, u32> stack_push(u32 size, u32 align_v);
 	static void stack_pop_verbose(u32 addr, u32 size) noexcept;
 };
 

@@ -25,15 +25,9 @@ public:
 	~settings_dialog();
 	int exec() override;
 Q_SIGNALS:
-	void GuiSettingsSyncRequest(bool configure_all);
 	void GuiStylesheetRequest();
-	void GuiSettingsSaveRequest();
 	void GuiRepaintRequest();
 	void EmuSettingsApplied();
-private Q_SLOTS:
-	void OnBackupCurrentGuiConfig();
-	void OnApplyGuiConfig();
-	void OnApplyStylesheet();
 private:
 	void EnhanceSlider(emu_settings_type settings_type, QSlider* slider, QLabel* label, const QString& label_text) const;
 
@@ -41,13 +35,12 @@ private:
 	void SnapSlider(QSlider* slider, int interval);
 	QSlider* m_current_slider = nullptr;
 
-	// Emulator tab
-	void AddGuiConfigs();
+	// Gui tab
 	void AddStylesheets();
+	void ApplyStylesheet(bool reset);
 	QString m_current_stylesheet;
-	QString m_current_gui_config;
 	// Gpu tab
-	QString m_old_renderer = "";
+	QString m_old_renderer;
 	// Audio tab
 	QComboBox *m_mics_combo[4];
 

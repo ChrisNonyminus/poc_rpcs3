@@ -106,7 +106,7 @@ bool main_window::Init(bool with_cli_boot)
 	setWindowTitle(QString::fromStdString("RPCS3 " + rpcs3::get_version().to_string()));
 
 	Q_EMIT RequestGlobalStylesheetChange();
-	ConfigureGuiFromSettings(true);
+	ConfigureGuiFromSettings();
 
 	if (const std::string_view branch_name = rpcs3::get_full_branch(); branch_name != "RPCS3/rpcs3/master" && branch_name != "local_build")
 	{
@@ -196,7 +196,7 @@ bool main_window::Init(bool with_cli_boot)
 	QAction *download_action = new QAction(tr("Download Update"), download_menu);
 	connect(download_action, &QAction::triggered, this, [this]
 	{
-		m_updater.update();
+		m_updater.update(false);
 	});
 
 	download_menu->addAction(download_action);
@@ -229,12 +229,16 @@ bool main_window::Init(bool with_cli_boot)
 	});
 
 #if defined(_WIN32) || defined(__linux__)
-	if (const auto update_value = m_gui_settings->GetValue(gui::m_check_upd_start).toString(); update_value != "false")
+	if (const auto update_value = m_gui_settings->GetValue(gui::m_check_upd_start).toString(); update_value != gui::update_off)
 	{
-		const bool in_background = with_cli_boot || update_value != "true";
-		m_updater.check_for_updates(true, in_background, this);
+		const bool in_background = with_cli_boot || update_value == gui::update_bkg;
+		const bool auto_accept   = !in_background && update_value == gui::update_auto;
+		m_updater.check_for_updates(true, in_background, auto_accept, this);
 	}
 #endif
+
+	// Disable vsh if not present.
+	ui->bootVSHAct->setEnabled(fs::is_file(g_cfg.vfs.get_dev_flash() + "vsh/module/vsh.self"));
 
 	return true;
 }
@@ -505,6 +509,12 @@ void main_window::BootGame()
 	Boot(sstr(dir_path));
 }
 
+void main_window::BootVSH()
+{
+	gui_log.notice("Booting from BootVSH...");
+	Boot(g_cfg.vfs.get_dev_flash() + "/vsh/module/vsh.self");
+}
+
 void main_window::BootRsxCapture(std::string path)
 {
 	if (path.empty())
@@ -517,7 +527,7 @@ void main_window::BootRsxCapture(std::string path)
 			is_stopped = true;
 		}
 
-		const QString file_path = QFileDialog::getOpenFileName(this, tr("Select RSX Capture"), qstr(fs::get_config_dir() + "captures/"), tr("RRC files (*.rrc);;All files (*.*)"));
+		const QString file_path = QFileDialog::getOpenFileName(this, tr("Select RSX Capture"), qstr(fs::get_config_dir() + "captures/"), tr("RRC files (*.rrc *.RRC);;All files (*.*)"));
 
 		if (file_path.isEmpty())
 		{
@@ -583,7 +593,7 @@ void main_window::InstallPackages(QStringList file_paths)
 		// If this function was called without a path, ask the user for files to install.
 		const QString path_last_pkg = m_gui_settings->GetValue(gui::fd_install_pkg).toString();
 		const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Select packages and/or rap files to install"),
-			path_last_pkg, tr("All relevant (*.pkg *.rap);;Package files (*.pkg);;Rap files (*.rap);;All files (*.*)"));
+			path_last_pkg, tr("All relevant (*.pkg *.PKG *.rap *.RAP);;Package files (*.pkg *.PKG);;Rap files (*.rap *.RAP);;All files (*.*)"));
 
 		if (paths.isEmpty())
 		{
@@ -594,9 +604,9 @@ void main_window::InstallPackages(QStringList file_paths)
 		const QFileInfo file_info(file_paths[0]);
 		m_gui_settings->SetValue(gui::fd_install_pkg, file_info.path());
 	}
-	else if (file_paths.count() == 1)
+
+	if (file_paths.count() == 1 && file_paths.front().endsWith(".pkg", Qt::CaseInsensitive))
 	{
-		// This can currently only happen by drag and drop and cli arg.
 		const QString file_path = file_paths.front();
 		const QFileInfo file_info(file_path);
 
@@ -639,11 +649,13 @@ void main_window::InstallPackages(QStringList file_paths)
 			info.changelog = tr("\n\nChangelog:\n%0", "Block for Changelog").arg(info.changelog);
 		}
 
-		if (QMessageBox::question(this, tr("PKG Decrypter / Installer"), tr("Do you want to install this package?\n\n%0\n\n%1%2%3%4%5")
-			.arg(file_info.fileName()).arg(info.title).arg(info.local_cat).arg(info.title_id).arg(info.version).arg(info.changelog),
+		const QString info_string = QStringLiteral("%0\n\n%1%2%3%4%5").arg(file_info.fileName()).arg(info.title).arg(info.local_cat)
+			.arg(info.title_id).arg(info.version).arg(info.changelog);
+
+		if (QMessageBox::question(this, tr("PKG Decrypter / Installer"), tr("Do you want to install this package?\n\n%0").arg(info_string), 
 			QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
 		{
-			gui_log.notice("PKG: Cancelled installation from drop. File: %s", sstr(file_paths.front()));
+			gui_log.notice("PKG: Cancelled installation from drop.\n%s", sstr(info_string));
 			return;
 		}
 	}
@@ -847,7 +859,7 @@ void main_window::HandlePackageInstallation(QStringList file_paths)
 void main_window::ExtractMSELF()
 {
 	const QString path_last_mself = m_gui_settings->GetValue(gui::fd_ext_mself).toString();
-	const QString file_path = QFileDialog::getOpenFileName(this, tr("Select MSELF To extract"), path_last_mself, tr("All mself files (*.mself);;All files (*.*)"));
+	const QString file_path = QFileDialog::getOpenFileName(this, tr("Select MSELF To extract"), path_last_mself, tr("All mself files (*.mself *.MSELF);;All files (*.*)"));
 
 	if (file_path.isEmpty())
 	{
@@ -868,7 +880,7 @@ void main_window::InstallPup(QString file_path)
 	if (file_path.isEmpty())
 	{
 		const QString path_last_pup = m_gui_settings->GetValue(gui::fd_install_pup).toString();
-		file_path = QFileDialog::getOpenFileName(this, tr("Select PS3UPDAT.PUP To Install"), path_last_pup, tr("PS3 update file (PS3UPDAT.PUP);;All pup files (*.pup);;All files (*.*)"));
+		file_path = QFileDialog::getOpenFileName(this, tr("Select PS3UPDAT.PUP To Install"), path_last_pup, tr("PS3 update file (PS3UPDAT.PUP);;All pup files (*.pup *.PUP);;All files (*.*)"));
 	}
 	else
 	{
@@ -893,7 +905,7 @@ void main_window::InstallPup(QString file_path)
 void main_window::ExtractPup()
 {
 	const QString path_last_pup = m_gui_settings->GetValue(gui::fd_install_pup).toString();
-	const QString file_path = QFileDialog::getOpenFileName(this, tr("Select PS3UPDAT.PUP To extract"), path_last_pup, tr("PS3 update file (PS3UPDAT.PUP);;All pup files (*.pup);;All files (*.*)"));
+	const QString file_path = QFileDialog::getOpenFileName(this, tr("Select PS3UPDAT.PUP To extract"), path_last_pup, tr("PS3 update file (PS3UPDAT.PUP);;All pup files (*.pup *.PUP);;All files (*.*)"));
 
 	if (file_path.isEmpty())
 	{
@@ -919,7 +931,7 @@ void main_window::ExtractTar()
 	Emu.Stop();
 
 	const QString path_last_tar = m_gui_settings->GetValue(gui::fd_ext_tar).toString();
-	QStringList files = QFileDialog::getOpenFileNames(this, tr("Select TAR To extract"), path_last_tar, tr("All tar files (*.tar *.tar.aa.*);;All files (*.*)"));
+	QStringList files = QFileDialog::getOpenFileNames(this, tr("Select TAR To extract"), path_last_tar, tr("All tar files (*.tar *.TAR *.tar.aa.* *.TAR.AA.*);;All files (*.*)"));
 
 	if (files.isEmpty())
 	{
@@ -1075,7 +1087,7 @@ void main_window::HandlePupInstallation(const QString& file_path, const QString&
 			return;	
 		}
 
-		if (!update_files.extract("/pup_extract"))
+		if (!update_files.extract("/pup_extract", true))
 		{
 			gui_log.error("Error while installing firmware: TAR contents are invalid.");
 			critical(tr("Firmware installation failed: Firmware contents could not be extracted."));
@@ -1228,6 +1240,8 @@ void main_window::HandlePupInstallation(const QString& file_path, const QString&
 
 	if (progress == update_filenames.size())
 	{
+		ui->bootVSHAct->setEnabled(fs::is_file(g_cfg.vfs.get_dev_flash() + "/vsh/module/vsh.self"));
+
 		gui_log.success("Successfully installed PS3 firmware version %s.", version_string);
 		m_gui_settings->ShowInfoBox(tr("Success!"), tr("Successfully installed PS3 firmware and LLE Modules!"), gui::ib_pup_success, this);
 
@@ -1248,7 +1262,7 @@ void main_window::DecryptSPRXLibraries()
 		path_last_sprx = qstr(g_cfg.vfs.get_dev_flash() + "sys/external");
 	}
 
-	const QStringList modules = QFileDialog::getOpenFileNames(this, tr("Select binary files"), path_last_sprx, tr("All Binaries (*.BIN *.self *.sprx);;BIN files (*.BIN);;SELF files (*.self);;SPRX files (*.sprx);;All files (*.*)"));
+	const QStringList modules = QFileDialog::getOpenFileNames(this, tr("Select binary files"), path_last_sprx, tr("All Binaries (*.bin *.BIN *.self *.SELF *.sprx *.SPRX);;BIN files (*.bin *.BIN);;SELF files (*.self *.SELF);;SPRX files (*.sprx *.SPRX);;All files (*.*)"));
 
 	if (modules.isEmpty())
 	{
@@ -1591,7 +1605,7 @@ void main_window::OnEmuStop()
 
 	EnableMenus(false);
 
-	if (Emu.GetBoot().empty())
+	if (title.isEmpty())
 	{
 		ui->toolbar_start->setIcon(m_icon_play);
 		ui->toolbar_start->setText(tr("Play"));
@@ -1951,6 +1965,7 @@ void main_window::CreateConnects()
 {
 	connect(ui->bootElfAct, &QAction::triggered, this, &main_window::BootElf);
 	connect(ui->bootGameAct, &QAction::triggered, this, &main_window::BootGame);
+	connect(ui->bootVSHAct, &QAction::triggered, this, &main_window::BootVSH);
 	connect(ui->actionopen_rsx_capture, &QAction::triggered, this, [this](){ BootRsxCapture(); });
 	connect(ui->actionCreate_RSX_Capture, &QAction::triggered, this, []()
 	{
@@ -2048,8 +2063,6 @@ void main_window::CreateConnects()
 	const auto open_settings = [this](int tabIndex)
 	{
 		settings_dialog dlg(m_gui_settings, m_emu_settings, tabIndex, this);
-		connect(&dlg, &settings_dialog::GuiSettingsSaveRequest, this, &main_window::SaveWindowState);
-		connect(&dlg, &settings_dialog::GuiSettingsSyncRequest, this, &main_window::ConfigureGuiFromSettings);
 		connect(&dlg, &settings_dialog::GuiStylesheetRequest, this, &main_window::RequestGlobalStylesheetChange);
 		connect(&dlg, &settings_dialog::GuiRepaintRequest, this, &main_window::RepaintGui);
 		connect(&dlg, &settings_dialog::EmuSettingsApplied, this, &main_window::NotifyEmuSettingsChange);
@@ -2090,7 +2103,8 @@ void main_window::CreateConnects()
 	{
 		vfs_dialog dlg(m_gui_settings, m_emu_settings, this);
 		dlg.exec();
-		m_game_list_frame->Refresh(true); // dev-hdd0 may have changed. Refresh just in case.
+		ui->bootVSHAct->setEnabled(fs::is_file(g_cfg.vfs.get_dev_flash() + "vsh/module/vsh.self")); // dev_flash may have changed. Disable vsh if not present.
+		m_game_list_frame->Refresh(true); // dev_hdd0 may have changed. Refresh just in case.
 	});
 
 	connect(ui->confSavedataManagerAct, &QAction::triggered, this, [this]
@@ -2274,7 +2288,7 @@ void main_window::CreateConnects()
 		QMessageBox::warning(this, tr("Auto-updater"), tr("The auto-updater currently isn't available for your os."));
 		return;
 #endif
-		m_updater.check_for_updates(false, false, this);
+		m_updater.check_for_updates(false, false, false, this);
 	});
 
 	connect(ui->aboutAct, &QAction::triggered, this, [this]
@@ -2503,7 +2517,7 @@ void main_window::CreateDockWindows()
 	connect(m_game_list_frame, &game_list_frame::NotifyEmuSettingsChange, this, &main_window::NotifyEmuSettingsChange);
 }
 
-void main_window::ConfigureGuiFromSettings(bool configure_all)
+void main_window::ConfigureGuiFromSettings()
 {
 	// Restore GUI state if needed. We need to if they exist.
 	if (!restoreGeometry(m_gui_settings->GetValue(gui::mw_geometry).toByteArray()))
@@ -2591,14 +2605,11 @@ void main_window::ConfigureGuiFromSettings(bool configure_all)
 	ui->sizeSlider->setSliderPosition(icon_size_index);
 	SetIconSizeActions(icon_size_index);
 
-	if (configure_all)
-	{
-		// Handle log settings
-		m_log_frame->LoadSettings();
+	// Handle log settings
+	m_log_frame->LoadSettings();
 
-		// Gamelist
-		m_game_list_frame->LoadSettings();
-	}
+	// Gamelist
+	m_game_list_frame->LoadSettings();
 }
 
 void main_window::SetIconSizeActions(int idx) const
@@ -2684,7 +2695,7 @@ void main_window::CreateFirmwareCache()
 
 	Emu.SetForceBoot(true);
 
-	if (const game_boot_result error = Emu.BootGame(g_cfg.vfs.get_dev_flash() + "sys/external/", "", true);
+	if (const game_boot_result error = Emu.BootGame(g_cfg.vfs.get_dev_flash() + "sys", "", true);
 		error != game_boot_result::no_errors)
 	{
 		gui_log.error("Creating firmware cache failed: reason: %s", error);

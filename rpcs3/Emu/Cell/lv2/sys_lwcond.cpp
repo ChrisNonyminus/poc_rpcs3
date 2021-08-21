@@ -131,9 +131,9 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 
 			if (cpu)
 			{
-				if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.incomplete_syscall_flag = true;
+					ppu.state += cpu_incomplete_syscall;
 					ppu.state += cpu_flag::exit;
 					return 0;
 				}
@@ -144,9 +144,9 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 
 			if (result)
 			{
-				if (static_cast<ppu_thread*>(result)->incomplete_syscall_flag)
+				if (static_cast<ppu_thread*>(result)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.incomplete_syscall_flag = true;
+					ppu.state += cpu_incomplete_syscall;
 					ppu.state += cpu_flag::exit;
 					return 0;
 				}
@@ -167,16 +167,16 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 						mutex->sq.emplace_back(result);
 						result = mutex->schedule<ppu_thread>(mutex->sq, mutex->protocol);
 
-						if (static_cast<ppu_thread*>(result)->incomplete_syscall_flag)
+						if (static_cast<ppu_thread*>(result)->state & cpu_flag::incomplete_syscall)
 						{
-							ppu.incomplete_syscall_flag = true;
+							ppu.state += cpu_incomplete_syscall;
 							ppu.state += cpu_flag::exit;
 							return 0;
 						}
 					}
 					else if (mode == 1)
 					{
-						ensure(mutex->add_waiter(result));
+						mutex->add_waiter(result);
 						result = nullptr;
 					}
 				}
@@ -258,9 +258,9 @@ error_code _sys_lwcond_signal_all(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 
 			for (auto cpu : cond.sq)
 			{
-				if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.incomplete_syscall_flag = true;
+					ppu.state += cpu_incomplete_syscall;
 					ppu.state += cpu_flag::exit;
 					return 0;
 				}
@@ -279,7 +279,7 @@ error_code _sys_lwcond_signal_all(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 				{
 					ensure(!mutex->signaled);
 					std::lock_guard lock(mutex->mutex);
-					ensure(mutex->add_waiter(cpu));
+					mutex->add_waiter(cpu);
 				}
 				else
 				{
@@ -334,22 +334,8 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 			return;
 		}
 
-		// Try to increment lwmutex's lwcond's waiters count
-		if (!mutex->lwcond_waiters.fetch_op([](s32& val)
-		{
-			if (val == smin)
-			{
-				return false;
-			}
-
-			val++;
-			return true;
-		}).second)
-		{
-			// Failed - lwmutex was detroyed and all waiters have quit
-			mutex.reset();
-			return;
-		}
+		// Increment lwmutex's lwcond's waiters count
+		mutex->lwcond_waiters++;
 
 		std::lock_guard lock(cond.mutex);
 
@@ -373,9 +359,9 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 			// Process lwmutex sleep queue
 			if (const auto cpu = mutex->schedule<ppu_thread>(mutex->sq, mutex->protocol))
 			{
-				if (static_cast<ppu_thread*>(cpu)->incomplete_syscall_flag)
+				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.incomplete_syscall_flag = true;
+					ppu.state += cpu_incomplete_syscall;
 					ppu.state += cpu_flag::exit;
 					return;
 				}
@@ -397,7 +383,7 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 		return CELL_ESRCH;
 	}
 
-	if (ppu.incomplete_syscall_flag)
+	if (ppu.state & cpu_flag::incomplete_syscall)
 	{
 		return CELL_OK;
 	}
@@ -423,7 +409,7 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 			}
 
 			ppu.optional_syscall_state = +mutex_sleep;
-			ppu.incomplete_syscall_flag = true;
+			ppu.state += cpu_incomplete_syscall;
 			break;
 		}
 

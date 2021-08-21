@@ -527,7 +527,7 @@ const std::array<std::pair<ppu_function_t, std::string_view>, 1024> g_ppu_syscal
 	BIND_SYSC(sys_hid_manager_check_focus),                 //510 (0x1FE)
 	NULL_FUNC(sys_hid_manager_set_master_process),          //511 (0x1FF)  ROOT
 	BIND_SYSC(sys_hid_manager_is_process_permission_root),  //512 (0x200)  ROOT
-	null_func,//BIND_SYSC(sys_hid_manager_...),             //513 (0x201)
+	BIND_SYSC(sys_hid_manager_513),                         //513 (0x201)
 	BIND_SYSC(sys_hid_manager_514),                         //514 (0x202)
 	uns_func,                                               //515 (0x203)  UNS
 	BIND_SYSC(sys_config_open),                             //516 (0x204)
@@ -1416,13 +1416,13 @@ void lv2_obj::schedule_all()
 	}
 }
 
-ppu_thread_status lv2_obj::ppu_state(ppu_thread* ppu, bool lock_idm)
+ppu_thread_status lv2_obj::ppu_state(ppu_thread* ppu, bool lock_idm, bool lock_lv2)
 {
-	std::optional<reader_lock> opt_lock;
+	std::optional<reader_lock> opt_lock[2];
 
 	if (lock_idm)
 	{
-		opt_lock.emplace(id_manager::g_mutex);
+		opt_lock[0].emplace(id_manager::g_mutex);
 	}
 
 	if ((!Emu.IsReady()) ? ppu->state.all_of(cpu_flag::stop) : ppu->stop_flag_removal_protection)
@@ -1437,7 +1437,10 @@ ppu_thread_status lv2_obj::ppu_state(ppu_thread* ppu, bool lock_idm)
 	default: break;
 	}
 
-	reader_lock lock(g_mutex);
+	if (lock_lv2)
+	{
+		opt_lock[1].emplace(lv2_obj::g_mutex);
+	}
 
 	const auto it = std::find(g_ppu.begin(), g_ppu.end(), ppu);
 

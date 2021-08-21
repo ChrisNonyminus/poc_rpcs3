@@ -103,7 +103,7 @@ namespace rsx
 {
 	std::function<bool(u32 addr, bool is_writing)> g_access_violation_handler;
 
-	u32 get_address(u32 offset, u32 location, bool allow_failure, u32 line, u32 col, const char* file, const char* func)
+	u32 get_address(u32 offset, u32 location, u32 size_to_check, u32 line, u32 col, const char* file, const char* func)
 	{
 		const auto render = get_current_renderer();
 		std::string_view msg;
@@ -113,7 +113,7 @@ namespace rsx
 		case CELL_GCM_CONTEXT_DMA_MEMORY_FRAME_BUFFER:
 		case CELL_GCM_LOCATION_LOCAL:
 		{
-			if (offset < render->local_mem_size)
+			if (offset < render->local_mem_size && render->local_mem_size - offset >= size_to_check)
 			{
 				return rsx::constants::local_mem_base + offset;
 			}
@@ -127,7 +127,10 @@ namespace rsx
 		{
 			if (const u32 ea = render->iomap_table.get_addr(offset); ea + 1)
 			{
-				return ea;
+				if (!size_to_check || vm::check_addr(ea, 0, size_to_check))
+				{
+					return ea;
+				}
 			}
 
 			msg = "RSXIO memory not mapped!"sv;
@@ -149,7 +152,10 @@ namespace rsx
 		{
 			if (const u32 ea = offset < 0x1000000 ? render->iomap_table.get_addr(0x0e000000 + offset) : -1; ea + 1)
 			{
-				return ea;
+				if (!size_to_check || vm::check_addr(ea, 0, size_to_check))
+				{
+					return ea;
+				}
 			}
 
 			msg = "RSXIO REPORT memory not mapped!"sv;
@@ -210,8 +216,11 @@ namespace rsx
 		}
 		}
 
-		if (allow_failure)
+		if (size_to_check)
 		{
+			// Allow failure if specified size
+			// This is to allow accurate recovery for failures
+			rsx_log.warning("rsx::get_address(offset=0x%x, location=0x%x, size=0x%x): %s%s", offset, location, size_to_check, msg, src_loc{line, col, file, func});
 			return 0;
 		}
 
@@ -424,6 +433,23 @@ namespace rsx
 		g_access_violation_handler = nullptr;
 	}
 
+	void thread::serialize_common(utils::serial& ar)
+	{
+		ar(rsx::method_registers);
+	
+		for (auto& v : vertex_push_buffers)
+		{
+			ar(v.size, v.type, v.vertex_count, v.attribute_mask, v.data);
+		}
+
+		ar(element_push_buffer, fifo_ret_addr, saved_fifo_ret, zcull_surface_active, m_surface_info, m_depth_surface_info, m_framebuffer_layout);
+		ar(dma_address, iomap_table, restore_point, tiles, zculls, display_buffers, display_buffers_count, current_display_buffer);
+		ar(enable_second_vhandler, requested_vsync);
+		ar(device_addr, label_addr, main_mem_size, local_mem_size, rsx_event_port, driver_info);
+		ar(in_begin_end, zcull_stats_enabled, zcull_rendering_enabled, zcull_pixel_cnt_enabled);
+		ar(display_buffers, display_buffers_count, current_display_buffer);
+	}
+
 	thread::thread(utils::serial* _ar)
 		: cpu_thread(0x5555'5555)
 	{
@@ -453,19 +479,7 @@ namespace rsx
 		}
 
 		serialized = true;
-		utils::serial& ar = *_ar;
-
-		ar(rsx::method_registers);
-	
-		for (auto& v : vertex_push_buffers)
-		{
-			ar(v.size, v.type, v.vertex_count, v.attribute_mask, v.data);
-		}
-
-		ar(element_push_buffer, fifo_ret_addr, saved_fifo_ret, zcull_surface_active, m_surface_info, m_depth_surface_info, m_framebuffer_layout);
-		ar(dma_address, iomap_table, restore_point, tiles, zculls, device_addr, label_addr, main_mem_size, local_mem_size, rsx_event_port, driver_info);
-		ar(in_begin_end, zcull_stats_enabled, zcull_rendering_enabled, zcull_pixel_cnt_enabled);
-		ar(display_buffers, display_buffers_count, current_display_buffer);
+		serialize_common(*_ar);
 
 		if (dma_address)
 		{
@@ -478,17 +492,7 @@ namespace rsx
 	void thread::save(utils::serial& ar)
 	{
 		USING_SERIALIZATION_VERSION(rsx);
-		ar(rsx::method_registers);
-
-		for (auto& v : vertex_push_buffers)
-		{
-			ar(v.size, v.type, v.vertex_count, v.attribute_mask, v.data);
-		}
-
-		ar(element_push_buffer, fifo_ret_addr, saved_fifo_ret, zcull_surface_active, m_surface_info, m_depth_surface_info, m_framebuffer_layout);
-		ar(dma_address, iomap_table, restore_point, tiles, zculls, device_addr, label_addr, main_mem_size, local_mem_size, rsx_event_port, driver_info);
-		ar(in_begin_end, zcull_stats_enabled, zcull_rendering_enabled, zcull_pixel_cnt_enabled);
-		ar(display_buffers, display_buffers_count, current_display_buffer);
+		serialize_common(ar);
 	}
 
 	avconf::avconf(utils::serial& ar)
@@ -718,12 +722,13 @@ namespace rsx
 			// TODO: exit condition
 			while (!is_stopped())
 			{
+				const u64 current = get_system_time();
 				const u64 period_time = 1000000 / g_cfg.video.vblank_rate;
-				const u64 wait_sleep = period_time - u64{period_time >= host_min_quantum} * host_min_quantum;
+				const u64 wait_for = period_time - std::min<u64>(current - start_time, period_time);
+				const u64 wait_sleep = wait_for - u64{wait_for >= host_min_quantum} * host_min_quantum;
 
-				if (get_system_time() - start_time >= period_time)
+				if (!wait_for)
 				{
-					do
 					{
 						start_time += period_time;
 						vblank_count++;
@@ -747,10 +752,14 @@ namespace rsx
 							sys_rsx_context_attribute(0x55555555, 0xFED, 1, 0, 0, 0);
 						}
 					}
-					while (get_system_time() - start_time >= period_time);
-
+				}
+				else if (wait_sleep)
+				{
 					thread_ctrl::wait_for(wait_sleep);
-					continue;
+				}
+				else if (wait_for >= host_min_quantum / 3 * 2)
+				{
+					std::this_thread::yield();
 				}
 
 				if (Emu.IsPaused())
@@ -766,8 +775,6 @@ namespace rsx
 					// Restore difference
 					start_time = get_system_time() - start_time;
 				}
-
-				thread_ctrl::wait_for(100);
 			}
 		});
 
@@ -1098,17 +1105,17 @@ namespace rsx
 	{
 		u32 offset_color[] =
 		{
-			rsx::method_registers.surface_a_offset(),
-			rsx::method_registers.surface_b_offset(),
-			rsx::method_registers.surface_c_offset(),
-			rsx::method_registers.surface_d_offset(),
+			rsx::method_registers.surface_offset(0),
+			rsx::method_registers.surface_offset(1),
+			rsx::method_registers.surface_offset(2),
+			rsx::method_registers.surface_offset(3),
 		};
 		u32 context_dma_color[] =
 		{
-			rsx::method_registers.surface_a_dma(),
-			rsx::method_registers.surface_b_dma(),
-			rsx::method_registers.surface_c_dma(),
-			rsx::method_registers.surface_d_dma(),
+			rsx::method_registers.surface_dma(0),
+			rsx::method_registers.surface_dma(1),
+			rsx::method_registers.surface_dma(2),
+			rsx::method_registers.surface_dma(3),
 		};
 		return
 		{
@@ -1152,10 +1159,10 @@ namespace rsx
 		layout.zeta_pitch = rsx::method_registers.surface_z_pitch();
 		layout.color_pitch =
 		{
-			rsx::method_registers.surface_a_pitch(),
-			rsx::method_registers.surface_b_pitch(),
-			rsx::method_registers.surface_c_pitch(),
-			rsx::method_registers.surface_d_pitch(),
+			rsx::method_registers.surface_pitch(0),
+			rsx::method_registers.surface_pitch(1),
+			rsx::method_registers.surface_pitch(2),
+			rsx::method_registers.surface_pitch(3),
 		};
 
 		layout.color_format = rsx::method_registers.surface_color();
@@ -1975,8 +1982,10 @@ namespace rsx
 			auto &tex = rsx::method_registers.fragment_textures[i];
 			if (tex.enabled())
 			{
-				current_fragment_program.texture_params[i].scale_x = sampler_descriptors[i]->scale_x;
-				current_fragment_program.texture_params[i].scale_y = sampler_descriptors[i]->scale_y;
+				current_fragment_program.texture_params[i].scale[0] = sampler_descriptors[i]->scale_x;
+				current_fragment_program.texture_params[i].scale[1] = sampler_descriptors[i]->scale_y;
+				current_fragment_program.texture_params[i].scale[2] = sampler_descriptors[i]->scale_z;
+				current_fragment_program.texture_params[i].subpixel_bias = 0.f;
 				current_fragment_program.texture_params[i].remap = tex.remap();
 
 				m_graphics_state |= rsx::pipeline_state::fragment_texture_state_dirty;
@@ -1996,7 +2005,17 @@ namespace rsx
 				const u32 format = raw_format & ~(CELL_GCM_TEXTURE_LN | CELL_GCM_TEXTURE_UN);
 
 				if (raw_format & CELL_GCM_TEXTURE_UN)
+				{
 					current_fp_texture_state.unnormalized_coords |= (1 << i);
+
+					if (tex.min_filter() == rsx::texture_minify_filter::nearest ||
+						tex.mag_filter() == rsx::texture_magnify_filter::nearest)
+					{
+						// Subpixel offset so that (X + bias) * scale will round correctly.
+						// This is done to work around fdiv precision issues in some GPUs (NVIDIA)
+						current_fragment_program.texture_params[i].subpixel_bias = 0.01f;
+					}
+				}
 
 				if (sampler_descriptors[i]->format_class != RSX_FORMAT_CLASS_COLOR)
 				{
@@ -2627,7 +2646,7 @@ namespace rsx
 		fifo_ctrl->sync_get();
 	}
 
-	void thread::recover_fifo()
+	void thread::recover_fifo(u32 line, u32 col, const char* file, const char* func)
 	{
 		const u64 current_time = get_system_time();
 
@@ -2636,10 +2655,11 @@ namespace rsx
 			const auto cmd_info = recovered_fifo_cmds_history.front();
 
 			// Check timestamp of last tracked cmd
-			if (current_time - cmd_info.timestamp < 2'000'000u)
+			// Shorten the range of forbidden difference if driver wake-up delay is used
+			if (current_time - cmd_info.timestamp < 2'000'000u - std::min<u32>(g_cfg.video.driver_wakeup_delay * 700, 1'400'000))
 			{
 				// Probably hopeless
-				fmt::throw_exception("Dead FIFO commands queue state has been detected!\nTry increasing \"Driver Wake-Up Delay\" setting in Advanced settings.");
+				fmt::throw_exception("Dead FIFO commands queue state has been detected!\nTry increasing \"Driver Wake-Up Delay\" setting in Advanced settings. Called from %s", src_loc{line, col, file, func});
 			}
 
 			// Erase the last command from history, keep the size of the queue the same
@@ -2739,6 +2759,11 @@ namespace rsx
 	std::string thread::dump_regs() const
 	{
 		std::string result;
+
+		if (ctrl)
+		{
+			fmt::append(result, "FIFO: GET=0x%07x, PUT=0x%07x, REF=0x%08x\n", +ctrl->get, +ctrl->put, +ctrl->ref);
+		}
 
 		for (u32 i = 0; i < 1 << 14; i++)
 		{
@@ -3141,12 +3166,6 @@ namespace rsx
 				{
 					const auto delay_us = target_rsx_flip_time - time;
 					lv2_obj::wait_timeout<false, false>(delay_us);
-
-					if (thread_ctrl::state() == thread_state::aborting)
-					{
-						return;
-					}
-
 					performance_counters.idle_time += delay_us;
 				}
 			}

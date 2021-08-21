@@ -36,8 +36,6 @@ enum class thread_state : u32
 	mask = 3
 };
 
-class need_wakeup {};
-
 template <class Context>
 class named_thread;
 
@@ -227,16 +225,22 @@ public:
 	}
 
 	// Set current thread name (not recommended)
-	static void set_name(std::string_view name)
+	static void set_name(std::string name)
 	{
 		g_tls_this_thread->m_tname.store(make_single<std::string>(name));
+		g_tls_this_thread->set_name(std::move(name));
 	}
 
 	// Set thread name (not recommended)
 	template <typename T>
-	static void set_name(named_thread<T>& thread, std::string_view name)
+	static void set_name(named_thread<T>& thread, std::string name)
 	{
 		static_cast<thread_base&>(thread).m_tname.store(make_single<std::string>(name));
+
+		if (g_tls_this_thread == std::addressof(static_cast<thread_base&>(thread)))
+		{
+			g_tls_this_thread->set_name(std::move(name));
+		}
 	}
 
 	template <typename T>
@@ -617,14 +621,14 @@ public:
 	// Join thread by thread_state::finished
 	named_thread& operator=(thread_state s)
 	{
+		if constexpr (std::is_assignable_v<Context&, thread_state>)
+		{
+			static_cast<Context&>(*this) = s;
+		}
+
 		if (s >= thread_state::aborting && thread::m_sync.fetch_op([](u64& v){ return !(v & 3) && (v |= 1); }).second)
 		{
 			thread::m_sync.notify_one(1);
-
-			if constexpr (std::is_base_of_v<need_wakeup, Context>)
-			{
-				this->wake_up();
-			}
 		}
 
 		if (s == thread_state::finished)
