@@ -6,7 +6,7 @@
 extern "C" __declspec(dllexport) unsigned char ManagedWrapper_peekbyte(long long addr)
 {
 	if (vm::check_addr(static_cast<u32>(addr)) == false)
-		return 0x58; //unmapped memory; denote this by capital Xs
+		return 0x3F; //unmapped memory; denote this by ?s
 	return vm::g_sudo_addr[static_cast<u32>(addr)];
 }
 
