@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "VFS.h"
 #include "Utilities/bin_patch.h"
 #include "Emu/Memory/vm.h"
@@ -51,31 +51,31 @@ LOG_CHANNEL(sys_log, "SYS");
 // Preallocate 32 MiB
 stx::manual_typemap<void, 0x20'00000, 128> g_fixed_typemap;
 
-bool g_use_rtm = false;
+bool g_use_rtm      = false;
 u64 g_rtm_tx_limit1 = 0;
 u64 g_rtm_tx_limit2 = 0;
 
 struct serial_ver_t
 {
-	bool used = false;
+	bool used           = false;
 	u32 current_version = 0;
 	std::set<u32> compatible_versions;
 };
 
 static std::array<serial_ver_t, 18> s_serial_versions;
 
-#define SERIALIZATION_VER(name, identifier, ver) \
-\
-	const bool s_##name##_serialization_fill = []() { ::s_serial_versions[identifier].compatible_versions = ver; return true; }();\
-\
-	extern void using_##name##_serialization()\
-	{\
-		::s_serial_versions[identifier].used = true;\
-	}\
-\
-	extern u32 get_##name##_serialization_version()\
-	{\
-		return ::s_serial_versions[identifier].current_version;\
+#define SERIALIZATION_VER(name, identifier, ver)                \
+                                                                \
+	const bool s_##name##_serialization_fill = []() { ::s_serial_versions[identifier].compatible_versions = ver; return true; }();      \
+                                                                \
+	extern void using_##name##_serialization()                  \
+	{                                                           \
+		::s_serial_versions[identifier].used = true;            \
+	}                                                           \
+                                                                \
+	extern u32 get_##name##_serialization_version()             \
+	{                                                           \
+		return ::s_serial_versions[identifier].current_version; \
 	}
 
 SERIALIZATION_VER(global_version, 0, {6}) // For stuff not listed here
@@ -95,7 +95,7 @@ namespace rsx
 }
 
 #ifdef _MSC_VER
-// Compiler bug, lambda function body does seem to inherit used namespace atleast for function decleration 
+// Compiler bug, lambda function body does seem to inherit used namespace atleast for function decleration
 SERIALIZATION_VER(rsx, 10, {3})
 #endif
 
@@ -128,24 +128,23 @@ std::array<std::deque<std::string>, 16> g_tty_input;
 std::mutex g_tty_mutex;
 thread_local std::string_view g_tls_serialize_name;
 
-u64 g_timebased_offs = 0;
+u64 g_timebased_offs  = 0;
 u64 g_systemtime_offs = 0;
 
-extern thread_local std::string(*g_tls_log_prefix)();
+extern thread_local std::string (*g_tls_log_prefix)();
 
 // Report error and call std::abort(), defined in main.cpp
 [[noreturn]] void report_fatal_error(std::string_view);
 
 namespace atomic_wait
 {
-	extern void parse_hashtable(bool(*cb)(u64 id, u32 refs, u64 ptr, u32 stats));
+	extern void parse_hashtable(bool (*cb)(u64 id, u32 refs, u64 ptr, u32 stats));
 }
 
-template<>
+template <>
 void fmt_class_string<game_boot_result>::format(std::string& out, u64 arg)
 {
-	format_enum(out, arg, [](game_boot_result value)
-	{
+	format_enum(out, arg, [](game_boot_result value) {
 		switch (value)
 		{
 		case game_boot_result::no_errors: return "No errors";
@@ -185,12 +184,12 @@ class cell_audio_thread;
 class usb_handler_thread;
 class camera_context;
 
-// This function ensures constant initialization order between different compilers and builds 
+// This function ensures constant initialization order between different compilers and builds
 void init_fxo_for_exec(utils::serial* ar, bool full = false)
 {
 	g_fxo->init<ppu_module>();
 
-	void init_ppu_functions(utils::serial* ar, bool full);
+	void init_ppu_functions(utils::serial * ar, bool full);
 
 	if (full)
 	{
@@ -207,7 +206,7 @@ void init_fxo_for_exec(utils::serial* ar, bool full = false)
 	fxo_serialize_body<id_manager::id_map<named_thread<spu_thread>>>(ar);
 
 	fxo_serialize<named_thread<class np_handler>>(ar);
-	fxo_serialize<id_manager::id_map<struct lv2_socket>>(ar); // Dependancy on RPCN
+	fxo_serialize<id_manager::id_map<struct lv2_socket>>(ar);    // Dependancy on RPCN
 	fxo_serialize<id_manager::id_map<struct lv2_spu_group>>(ar); // Dependancy on SPUs
 	fxo_serialize<named_thread<class cell_audio_thread>>(ar);
 	fxo_serialize<id_manager::id_map<struct sys_vm_t>>(ar);
@@ -225,7 +224,8 @@ void init_fxo_for_exec(utils::serial* ar, bool full = false)
 	Emu.GetCallbacks().init_pad_handler(Emu.GetTitleID());
 	Emu.GetCallbacks().init_kb_handler();
 	Emu.GetCallbacks().init_mouse_handler();
-	if (ar) Emu.ExecDeserializationRemnants();
+	if (ar)
+		Emu.ExecDeserializationRemnants();
 }
 
 void Emulator::Init(bool add_only)
@@ -302,16 +302,15 @@ void Emulator::Init(bool add_only)
 	}
 
 	// Create directories (can be disabled if necessary)
-	const std::string emu_dir = rpcs3::utils::get_emu_dir();
-	const std::string dev_hdd0 = rpcs3::utils::get_hdd0_dir();
-	const std::string dev_hdd1 = g_cfg.vfs.get(g_cfg.vfs.dev_hdd1, emu_dir);
-	const std::string dev_usb = g_cfg.vfs.get(g_cfg.vfs.dev_usb000, emu_dir);
-	const std::string dev_flsh = g_cfg.vfs.get_dev_flash();
+	const std::string emu_dir   = rpcs3::utils::get_emu_dir();
+	const std::string dev_hdd0  = rpcs3::utils::get_hdd0_dir();
+	const std::string dev_hdd1  = g_cfg.vfs.get(g_cfg.vfs.dev_hdd1, emu_dir);
+	const std::string dev_usb   = g_cfg.vfs.get(g_cfg.vfs.dev_usb000, emu_dir);
+	const std::string dev_flsh  = g_cfg.vfs.get_dev_flash();
 	const std::string dev_flsh2 = g_cfg.vfs.get_dev_flash2();
 	const std::string dev_flsh3 = g_cfg.vfs.get_dev_flash3();
 
-	auto make_path_verbose = [](const std::string& path)
-	{
+	auto make_path_verbose = [](const std::string& path) {
 		if (!fs::create_path(path))
 		{
 			sys_log.fatal("Failed to create path: %s (%s)", path, fs::g_tls_error);
@@ -452,7 +451,7 @@ void Emulator::SetUsr(const std::string& user)
 	}
 
 	m_usrid = id;
-	m_usr = user;
+	m_usr   = user;
 }
 
 std::string Emulator::GetBackgroundPicturePath() const
@@ -530,8 +529,7 @@ bool Emulator::BootRsxCapture(const std::string& path)
 	{
 		static constexpr std::string_view machines[2]{"Big-Endian", "Little-Endian"};
 
-		sys_log.error("Rsx capture byte endianness not supported! Expected %s format, found %s format"
-			, machines[frame->LE_format ^ 1], machines[frame->LE_format]);
+		sys_log.error("Rsx capture byte endianness not supported! Expected %s format, found %s format", machines[frame->LE_format ^ 1], machines[frame->LE_format]);
 
 		return false;
 	}
@@ -596,12 +594,12 @@ game_boot_result Emulator::BootGame(const std::string& path, const std::string& 
 	game_boot_result result = game_boot_result::nothing_to_boot;
 
 	static const char* boot_list[] =
-	{
-		"/EBOOT.BIN",
-		"/USRDIR/EBOOT.BIN",
-		"/USRDIR/ISO.BIN.EDAT",
-		"/PS3_GAME/USRDIR/EBOOT.BIN",
-	};
+	    {
+	        "/EBOOT.BIN",
+	        "/USRDIR/EBOOT.BIN",
+	        "/USRDIR/ISO.BIN.EDAT",
+	        "/PS3_GAME/USRDIR/EBOOT.BIN",
+	    };
 
 	for (std::string elf : boot_list)
 	{
@@ -617,7 +615,7 @@ game_boot_result Emulator::BootGame(const std::string& path, const std::string& 
 
 	if (add_only)
 	{
-		for (auto&& entry : fs::dir{ path })
+		for (auto&& entry : fs::dir{path})
 		{
 			if (entry.name == "." || entry.name == "..")
 			{
@@ -661,88 +659,6 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 		m_title_id = title_id;
 	}
 
-	m_state_inspection_savestate = g_cfg.savestate.state_inspection_mode.get();
-
-	std::string bdvd_by_title_id;
-
-	if (ar)
-	{
-		struct file_header
-		{
-			using enable_bitcopy = std::true_type;
-
-			nse_t<u64, 1> magic;
-			bool LE_format;
-			bool state_inspection_support;
-			nse_t<u64, 1> offset;
-		};
-
-		if (ar->data.size() <= sizeof(file_header))
-		{
-			return game_boot_result::savestate_corrupted;
-		}
-
-		const file_header header = ar->operator file_header();
-
-		if (header.magic != "RPCS3SAV"_u64)
-		{
-			return game_boot_result::savestate_corrupted;
-		}
-
-		if (header.LE_format != (std::endian::native == std::endian::little))
-		{
-			return game_boot_result::savestate_corrupted;
-		}
-
-		g_cfg.savestate.state_inspection_mode.set(header.state_inspection_support);
-
-		// Emulate seek operation (please avoid using in other places)
-		ar->pos = header.offset;
-		const std::vector<std::pair<u16, u16>> versions_data = *ar;
-		ar->pos = sizeof(file_header); // Restore position
-
-		if (versions_data.empty())
-		{
-			return game_boot_result::savestate_corrupted;
-		}
-
-		bool ok = true;
-
-		for (auto [identifier, version] : versions_data)
-		{
-			if (identifier >= s_serial_versions.size())
-			{
-				sys_log.error("Savestate version identider is unknown! (category=%u, version=%u)", identifier, version);
-				ok = false; // Log all mismatches
-			}
-			else if (!s_serial_versions[identifier].compatible_versions.count(version))
-			{
-				sys_log.error("Savestate version is not supported. (category=%u, version=%u)", identifier, version);
-				ok = false;
-			}
-			else
-			{
-				s_serial_versions[identifier].current_version = version;
-			}
-		}
-
-		if (!ok)
-		{
-			return game_boot_result::savestate_version_unsupported;
-		}
-
-		(*ar)(m_path, bdvd_by_title_id);
-
-		klic.clear();
-
-		if (u128 key = ar->operator u128())
-		{
-			klic.emplace_back(key);
-		}
-	}
-
-	const std::string resolved_path = GetCallbacks().resolve_path(m_path);
-
 	{
 		Init(add_only);
 
@@ -767,50 +683,50 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 		}
 
 		m_state_inspection_savestate = g_cfg.savestate.state_inspection_mode.get();
-	
+
 		if (ar)
 		{
 			struct file_header
 			{
 				using enable_bitcopy = std::true_type;
-	
+
 				nse_t<u64, 1> magic;
 				bool LE_format;
 				bool state_inspection_support;
 				nse_t<u64, 1> offset;
 			};
-	
+
 			if (ar->data.size() <= sizeof(file_header))
 			{
 				return game_boot_result::savestate_corrupted;
 			}
-	
+
 			const file_header header = ar->operator file_header();
-	
+
 			if (header.magic != "RPCS3SAV"_u64)
 			{
 				return game_boot_result::savestate_corrupted;
 			}
-	
+
 			if (header.LE_format != (std::endian::native == std::endian::little))
 			{
 				return game_boot_result::savestate_corrupted;
 			}
-	
+
 			g_cfg.savestate.state_inspection_mode.set(header.state_inspection_support);
-	
+
 			// Emulate seek operation (please avoid using in other places)
-			ar->pos = header.offset;
+			ar->pos                                              = header.offset;
 			const std::vector<std::pair<u16, u16>> versions_data = *ar;
-			ar->pos = sizeof(file_header); // Restore position
-	
+			ar->pos                                              = sizeof(file_header); // Restore position
+
 			if (versions_data.empty())
 			{
 				return game_boot_result::savestate_corrupted;
 			}
-	
+
 			bool ok = true;
-	
+
 			for (auto [identifier, version] : versions_data)
 			{
 				if (identifier >= s_serial_versions.size())
@@ -828,28 +744,28 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 					s_serial_versions[identifier].current_version = version;
 				}
 			}
-	
+
 			if (!ok)
 			{
 				return game_boot_result::savestate_version_unsupported;
 			}
-	
+
 			argv.clear();
-	
+
 			std::string bdvd_by_title_id;
 			(*ar)(argv.emplace_back(), bdvd_by_title_id);
-	
+
 			klic.clear();
-	
+
 			if (u128 key = ar->operator u128())
 			{
 				klic.emplace_back(key);
 			}
-	
+
 			if (!bdvd_by_title_id.empty())
 			{
 				m_title_id = bdvd_by_title_id;
-	
+
 				// Load /dev_bdvd/ from game list if available
 				if (auto node = games[m_title_id])
 				{
@@ -861,11 +777,10 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 					return game_boot_result::invalid_file_or_folder;
 				}
 			}
-	
+
 			hdd1 = ar->operator std::string();
-	
-			auto load_tar = [&](const std::string& path)
-			{
+
+			auto load_tar = [&](const std::string& path) {
 				const usz size = *ar;
 
 				if (size)
@@ -881,7 +796,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 				hdd1 = rpcs3::utils::get_hdd1_dir() + "caches/" + hdd1 + "/";
 				load_tar(hdd1);
 			}
-	
+
 			for (const std::string hdd0_game = rpcs3::utils::get_hdd0_dir() + "game/";;)
 			{
 				const std::string game_data = ar->operator std::string();
@@ -924,7 +839,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			{
 				sys_log.error("Unknown source for savestates: %s", argv[0]);
 			}
-	
+
 			argv.clear();
 		}
 
@@ -939,7 +854,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 		if (fs::file sfov{elf_dir + "/sce_sys/param.sfo"})
 		{
 			m_sfo_dir = elf_dir;
-			_psf = psf::load_object(sfov);
+			_psf      = psf::load_object(sfov);
 		}
 		else
 		{
@@ -972,9 +887,9 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			_psf = psf::load_object(fs::file(m_sfo_dir + "/PARAM.SFO"));
 		}
 
-		m_title = std::string(psf::get_string(_psf, "TITLE", std::string_view(m_path).substr(m_path.find_last_of(fs::delim) + 1)));
+		m_title    = std::string(psf::get_string(_psf, "TITLE", std::string_view(m_path).substr(m_path.find_last_of(fs::delim) + 1)));
 		m_title_id = std::string(psf::get_string(_psf, "TITLE_ID"));
-		m_cat = std::string(psf::get_string(_psf, "CATEGORY"));
+		m_cat      = std::string(psf::get_string(_psf, "CATEGORY"));
 
 		const auto version_app  = psf::get_string(_psf, "APP_VER", "Unknown");
 		const auto version_disc = psf::get_string(_psf, "VERSION", "Unknown");
@@ -997,7 +912,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			const std::string config_path_old = rpcs3::utils::get_custom_config_path(m_title_id, true);
 
 			// Load custom config-1
-			if (fs::file cfg_file{ config_path_old })
+			if (fs::file cfg_file{config_path_old})
 			{
 				sys_log.notice("Applying custom config: %s", config_path_old);
 
@@ -1008,7 +923,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			}
 
 			// Load custom config-2
-			if (fs::file cfg_file{ config_path_new })
+			if (fs::file cfg_file{config_path_new})
 			{
 				sys_log.notice("Applying custom config: %s", config_path_new);
 
@@ -1023,7 +938,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			}
 
 			// Load custom config-3
-			if (fs::file cfg_file{ m_path + ".yml" })
+			if (fs::file cfg_file{m_path + ".yml"})
 			{
 				sys_log.notice("Applying custom config: %s.yml", m_path);
 
@@ -1058,7 +973,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 		if (g_use_rtm)
 		{
 			// Update supplementary settings
-			const f64 _1ns = utils::get_tsc_freq() / 1000'000'000.;
+			const f64 _1ns  = utils::get_tsc_freq() / 1000'000'000.;
 			g_rtm_tx_limit1 = g_cfg.core.tx_limit1_ns * _1ns;
 			g_rtm_tx_limit2 = g_cfg.core.tx_limit2_ns * _1ns;
 		}
@@ -1068,7 +983,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 		// Mount all devices
 		const std::string emu_dir = rpcs3::utils::get_emu_dir();
-		std::string bdvd_dir = g_cfg.vfs.dev_bdvd;
+		std::string bdvd_dir      = g_cfg.vfs.dev_bdvd;
 
 		// Mount default relative path to non-existent directory
 		vfs::mount("/dev_hdd0", g_cfg.vfs.get(g_cfg.vfs.dev_hdd0, emu_dir));
@@ -1093,8 +1008,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			g_cfg.core.ppu_decoder.from_default();
 
 			// Force LLE lib loading mode
-			g_cfg.core.libraries_control.set_set([]()
-			{
+			g_cfg.core.libraries_control.set_set([]() {
 				std::set<std::string> set;
 
 				extern const std::map<std::string_view, int> g_prx_list;
@@ -1110,10 +1024,9 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 			// Fake arg (workaround)
 			argv.resize(1);
 			argv[0] = "/dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN";
-			m_dir = "/dev_bdvd/PS3_GAME";
+			m_dir   = "/dev_bdvd/PS3_GAME";
 
-			g_fxo->init<named_thread>("SPRX Loader"sv, [this]
-			{
+			g_fxo->init<named_thread>("SPRX Loader"sv, [this] {
 				std::string path;
 				std::vector<std::string> dir_queue;
 				dir_queue.emplace_back(m_path + '/');
@@ -1187,7 +1100,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 				if (IsStopped())
 				{
-					m_path = m_path_old; // Reset m_path to fix boot from gui
+					m_path = m_path_old;      // Reset m_path to fix boot from gui
 					GetCallbacks().on_stop(); // Call on_stop to refresh gui
 					return;
 				}
@@ -1195,13 +1108,12 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 				ppu_precompile(dir_queue, nullptr);
 
 				// Exit "process"
-				CallAfter([]
-				{
+				CallAfter([] {
 					Emu.SetForceBoot(true);
 					Emu.Stop();
 				});
 
-				m_path = m_path_old; // Reset m_path to fix boot from gui
+				m_path = m_path_old;      // Reset m_path to fix boot from gui
 				GetCallbacks().on_stop(); // Call on_stop to refresh gui
 			});
 
@@ -1218,7 +1130,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 #ifdef _WIN32
 		// m_path might be passed from command line with differences in uppercase/lowercase on windows.
 		if ((!from_hdd0_game && IsPathInsideDir(fmt::to_lower(m_path), fmt::to_lower(hdd0_game))) ||
-			(!from_dev_flash && IsPathInsideDir(fmt::to_lower(m_path), fmt::to_lower(g_cfg.vfs.get_dev_flash()))))
+		    (!from_dev_flash && IsPathInsideDir(fmt::to_lower(m_path), fmt::to_lower(g_cfg.vfs.get_dev_flash()))))
 		{
 			// Let's just abort to prevent errors down the line.
 			sys_log.error("The boot path seems to contain incorrectly cased characters. Please adjust the path and try again.");
@@ -1239,7 +1151,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 				const std::string main_dir = elf_dir.substr(0, usrdir_pos);
 
 				if (const std::string sfb_dir = fs::get_parent_dir(main_dir);
-					!sfb_dir.empty() && fs::is_file(sfb_dir + "/PS3_DISC.SFB"))
+				    !sfb_dir.empty() && fs::is_file(sfb_dir + "/PS3_DISC.SFB"))
 				{
 					if (from_hdd0_game)
 					{
@@ -1261,7 +1173,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 					// Find game dir
 					if (const std::string main_dir_name = main_dir.substr(main_dir.find_last_of(fs::delim) + 1);
-						main_dir_name.size() == game_dir_size)
+					    main_dir_name.size() == game_dir_size)
 					{
 						m_game_dir = main_dir_name;
 					}
@@ -1316,7 +1228,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 				return game_boot_result::invalid_file_or_folder;
 			}
 
-			const auto game_psf = psf::load_object(fs::file{vfs::get("/dev_bdvd/PS3_GAME/PARAM.SFO")});
+			const auto game_psf      = psf::load_object(fs::file{vfs::get("/dev_bdvd/PS3_GAME/PARAM.SFO")});
 			const auto bdvd_title_id = psf::get_string(game_psf, "TITLE_ID");
 
 			if (bdvd_title_id != m_title_id)
@@ -1343,14 +1255,14 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 			argv.resize(9);
 			argv[0] = "/dev_flash/ps1emu/ps1_newemu.self";
-			argv[1] = m_title_id + "_mc1.VM1";    // virtual mc 1 /dev_hdd0/savedata/vmc/%argv[1]%
-			argv[2] = m_title_id + "_mc2.VM1";    // virtual mc 2 /dev_hdd0/savedata/vmc/%argv[2]%
-			argv[3] = "0082";                     // region target
-			argv[4] = "1600";                     // ??? arg4 600 / 1200 / 1600, resolution scale? (purely a guess, the numbers seem to match closely to resolutions tho)
-			argv[5] = game_path;                  // ps1 game folder path (not the game serial)
-			argv[6] = "1";                        // ??? arg6 1 ?
-			argv[7] = "2";                        // ??? arg7 2 -- full screen on/off 2/1 ?
-			argv[8] = "1";                        // ??? arg8 2 -- smoothing	on/off	= 1/0 ?
+			argv[1] = m_title_id + "_mc1.VM1"; // virtual mc 1 /dev_hdd0/savedata/vmc/%argv[1]%
+			argv[2] = m_title_id + "_mc2.VM1"; // virtual mc 2 /dev_hdd0/savedata/vmc/%argv[2]%
+			argv[3] = "0082";                  // region target
+			argv[4] = "1600";                  // ??? arg4 600 / 1200 / 1600, resolution scale? (purely a guess, the numbers seem to match closely to resolutions tho)
+			argv[5] = game_path;               // ps1 game folder path (not the game serial)
+			argv[6] = "1";                     // ??? arg6 1 ?
+			argv[7] = "2";                     // ??? arg7 2 -- full screen on/off 2/1 ?
+			argv[8] = "1";                     // ??? arg8 2 -- smoothing	on/off	= 1/0 ?
 
 			//TODO, this seems like it would normally be done by sysutil etc
 			//Basically make 2 128KB memory cards 0 filled and let the games handle formatting.
@@ -1404,13 +1316,13 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 		// Set title to actual disc title if necessary
 		const std::string disc_sfo_dir = vfs::get("/dev_bdvd/PS3_GAME/PARAM.SFO");
 
-		const auto disc_psf_obj = psf::load_object(fs::file{ disc_sfo_dir });
+		const auto disc_psf_obj = psf::load_object(fs::file{disc_sfo_dir});
 
 		// Install PKGDIR, INSDIR, PS3_EXTRA
 		if (!bdvd_dir.empty())
 		{
-			std::string ins_dir = vfs::get("/dev_bdvd/PS3_GAME/INSDIR/");
-			std::string pkg_dir = vfs::get("/dev_bdvd/PS3_GAME/PKGDIR/");
+			std::string ins_dir   = vfs::get("/dev_bdvd/PS3_GAME/INSDIR/");
+			std::string pkg_dir   = vfs::get("/dev_bdvd/PS3_GAME/PKGDIR/");
 			std::string extra_dir = vfs::get("/dev_bdvd/PS3_GAME/PS3_EXTRA/");
 			fs::file lock_file;
 
@@ -1540,8 +1452,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 		if (ar)
 		{
-			g_tls_log_prefix = []()
-			{
+			g_tls_log_prefix = []() {
 				return fmt::format("Emu State Load Thread: '%s'", g_tls_serialize_name);
 			};
 		}
@@ -1645,8 +1556,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 			if (argv[0].empty())
 			{
-				auto unescape = [](std::string_view path)
-				{
+				auto unescape = [](std::string_view path) {
 					// Unescape from host FS
 					std::vector<std::string> escaped = fmt::split(path, {std::string_view{&fs::delim[0], 1}, std::string_view{&fs::delim[1], 1}});
 					std::vector<std::string> result;
@@ -1661,39 +1571,39 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 				if (from_hdd0_game && m_cat == "DG")
 				{
 					argv[0] = "/dev_bdvd/PS3_GAME/" + unescape(resolved_path.substr(resolved_hdd0.size() + 10));
-					m_dir = "/dev_hdd0/game/" + resolved_path.substr(resolved_hdd0.size(), 10);
+					m_dir   = "/dev_hdd0/game/" + resolved_path.substr(resolved_hdd0.size(), 10);
 					sys_log.notice("Disc path: %s", m_dir);
 				}
 				else if (from_hdd0_game)
 				{
 					argv[0] = "/dev_hdd0/game/" + unescape(resolved_path.substr(resolved_hdd0.size()));
-					m_dir = "/dev_hdd0/game/" + resolved_path.substr(resolved_hdd0.size(), 10);
+					m_dir   = "/dev_hdd0/game/" + resolved_path.substr(resolved_hdd0.size(), 10);
 					sys_log.notice("Boot path: %s", m_dir);
 				}
 				else if (!bdvd_dir.empty() && fs::is_dir(bdvd_dir))
 				{
 					// Disc games are on /dev_bdvd/
 					const usz pos = resolved_path.rfind(m_game_dir);
-					argv[0] = "/dev_bdvd/PS3_GAME/" + unescape(resolved_path.substr(pos + game_dir_size + 1));
-					m_dir = "/dev_bdvd/PS3_GAME/";
+					argv[0]       = "/dev_bdvd/PS3_GAME/" + unescape(resolved_path.substr(pos + game_dir_size + 1));
+					m_dir         = "/dev_bdvd/PS3_GAME/";
 				}
 				else if (from_dev_flash)
 				{
 					// Firmware executables
 					argv[0] = "/dev_flash" + resolved_path.substr(GetCallbacks().resolve_path(g_cfg.vfs.get_dev_flash()).size());
-					m_dir = fs::get_parent_dir(argv[0]) + '/';
+					m_dir   = fs::get_parent_dir(argv[0]) + '/';
 				}
 				else if (g_cfg.vfs.host_root)
 				{
 					// For homebrew
 					argv[0] = "/host_root/" + resolved_path;
-					m_dir = "/host_root/" + elf_dir + '/';
+					m_dir   = "/host_root/" + elf_dir + '/';
 				}
 				else
 				{
 					// Use /app_home if /host_root is disabled
 					argv[0] = "/app_home/" + resolved_path.substr(resolved_path.find_last_of(fs::delim) + 1);
-					m_dir = "/app_home/";
+					m_dir   = "/app_home/";
 				}
 
 				sys_log.notice("Elf path: %s", argv[0]);
@@ -1760,16 +1670,14 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
 
 			// Check if there are any firmware SPRX which may be LLEd during emulation
 			// Don't prompt GUI confirmation if there aren't any
-			if (std::any_of(g_prx_list.begin(), g_prx_list.end(), [&libs](auto& lib)
-			{
-				return libs.count(std::string(lib.first) + ":lle") || (!lib.second && !libs.count(std::string(lib.first) + ":hle"));
-			}))
+			if (std::any_of(g_prx_list.begin(), g_prx_list.end(), [&libs](auto& lib) {
+				    return libs.count(std::string(lib.first) + ":lle") || (!lib.second && !libs.count(std::string(lib.first) + ":hle"));
+			    }))
 			{
 				SetForceBoot(true);
 				Stop();
 
-				CallAfter([this]()
-				{
+				CallAfter([this]() {
 					GetCallbacks().on_missing_fw();
 				});
 
@@ -1822,9 +1730,9 @@ void Emulator::RunPPU()
 	ensure(IsStarting());
 
 	// Run main thread
-	idm::select<named_thread<ppu_thread>>([](u32, named_thread<ppu_thread>& cpu)
-	{
-		if (cpu.stop_flag_removal_protection) return;
+	idm::select<named_thread<ppu_thread>>([](u32, named_thread<ppu_thread>& cpu) {
+		if (cpu.stop_flag_removal_protection)
+			return;
 		ensure(cpu.state.test_and_reset(cpu_flag::stop));
 		cpu.state.notify_one(cpu_flag::stop);
 	});
@@ -1842,18 +1750,16 @@ void Emulator::FixGuestTime()
 	{
 		u64 systemtime_dst = 0, timebased_dst = 0;
 		systemtime_dst = ar->operator u64();
-		timebased_dst = ar->operator u64();
+		timebased_dst  = ar->operator u64();
 
 		g_systemtime_offs = systemtime_dst - get_guest_system_time();
-		g_timebased_offs = timebased_dst - get_timebased_time();
+		g_timebased_offs  = timebased_dst - get_timebased_time();
 
 		g_cfg.savestate.state_inspection_mode.set(m_state_inspection_savestate);
 		ar.reset();
 
-		CallAfter([this]
-		{
-			g_tls_log_prefix = []()
-			{
+		CallAfter([this] {
+			g_tls_log_prefix = []() {
 				return std::string();
 			};
 		});
@@ -1861,9 +1767,9 @@ void Emulator::FixGuestTime()
 }
 void Emulator::FinalizeRunRequest()
 {
-	auto on_select = [] (u32, spu_thread& cpu)
-	{
-		if (cpu.stop_flag_removal_protection) return;
+	auto on_select = [](u32, spu_thread& cpu) {
+		if (cpu.stop_flag_removal_protection)
+			return;
 		ensure(cpu.state.test_and_reset(cpu_flag::stop));
 		cpu.state.notify_one(cpu_flag::stop);
 	};
@@ -1899,8 +1805,7 @@ bool Emulator::Pause()
 		sys_log.error("Emulator::Pause() error: concurrent access");
 	}
 
-	auto on_select = [](u32, cpu_thread& cpu)
-	{
+	auto on_select = [](u32, cpu_thread& cpu) {
 		cpu.state += cpu_flag::dbg_global_pause;
 	};
 
@@ -1971,8 +1876,7 @@ void Emulator::Resume()
 		sys_log.error("Emulator::Resume() error: concurrent access");
 	}
 
-	auto on_select = [](u32, cpu_thread& cpu)
-	{
+	auto on_select = [](u32, cpu_thread& cpu) {
 		cpu.state -= cpu_flag::dbg_global_pause;
 		cpu.state.notify_one(cpu_flag::dbg_global_pause);
 	};
@@ -1996,8 +1900,7 @@ void Emulator::Resume()
 
 void Emulator::Stop(bool savestate, bool restart)
 {
-	g_tls_log_prefix = []()
-	{
+	g_tls_log_prefix = []() {
 		return std::string();
 	};
 
@@ -2024,8 +1927,7 @@ void Emulator::Stop(bool savestate, bool restart)
 		ar = std::make_unique<utils::serial>();
 	}
 
-	named_thread stop_watchdog("Stop Watchdog", [&]()
-	{
+	named_thread stop_watchdog("Stop Watchdog", [&]() {
 		for (uint i = 0; thread_ctrl::state() != thread_state::aborting;)
 		{
 			// We don't need accurate timekeeping, using clocks may interfere with debugging
@@ -2033,7 +1935,7 @@ void Emulator::Stop(bool savestate, bool restart)
 			{
 				// Total amount of waiting: about 5s
 				report_fatal_error("Stopping emulator took too long."
-					"\nSome thread has probably deadlocked. Aborting.");
+				                   "\nSome thread has probably deadlocked. Aborting.");
 			}
 
 			thread_ctrl::wait_for(5'000);
@@ -2086,10 +1988,8 @@ void Emulator::Stop(bool savestate, bool restart)
 	if (savestate)
 	{
 		// Savestate thread
-		named_thread emu_state_cap_thread("Emu State Capture Thread", [&]()
-		{
-			g_tls_log_prefix = []()
-			{
+		named_thread emu_state_cap_thread("Emu State Capture Thread", [&]() {
+			g_tls_log_prefix = []() {
 				return fmt::format("Emu State Capture Thread: '%s'", g_tls_serialize_name);
 			};
 
@@ -2104,20 +2004,18 @@ void Emulator::Stop(bool savestate, bool restart)
 			using_ppu_serialization();
 
 			// Avoid duplicating TAR object memory because it can be very large
-			auto save_tar = [&](const std::string& path)
-			{
+			auto save_tar = [&](const std::string& path) {
 				ar(usz{}); // Reserve memory to be patched later with correct size
 				const usz old_size = ar.data.size();
-				ar.data = tar_object::save_directory(path, std::move(ar.data));
+				ar.data            = tar_object::save_directory(path, std::move(ar.data));
 				const usz tar_size = ar.data.size() - old_size;
 				std::memcpy(ar.data.data() + old_size - sizeof(usz), &tar_size, sizeof(usz));
 				sys_log.success("Saved the contents of directory '%s' (size=0x%x)", path, tar_size);
 			};
 
-			auto save_hdd1 = [&]()
-			{
+			auto save_hdd1 = [&]() {
 				const std::string _path = vfs::get("/dev_hdd1");
-				std::string_view path = _path;
+				std::string_view path   = _path;
 
 				path = path.substr(0, path.find_last_not_of(fs::delim) + 1);
 
@@ -2136,8 +2034,7 @@ void Emulator::Stop(bool savestate, bool restart)
 				}
 			};
 
-			auto save_hdd0 = [&]()
-			{
+			auto save_hdd0 = [&]() {
 				if (!g_cfg.savestate.suspend_emu && g_cfg.savestate.save_disc_game_data)
 				{
 					const std::string path = vfs::get("/dev_hdd0/game/");
@@ -2182,13 +2079,13 @@ void Emulator::Stop(bool savestate, bool restart)
 			sys_log.error("Saving savestate failed due to fatal error!");
 			ar.reset();
 			savestate = false;
-			restart = false;
+			restart   = false;
 		}
 	}
 
 	cpu_thread::cleanup();
 
-	g_timebased_offs = 0;
+	g_timebased_offs  = 0;
 	g_systemtime_offs = 0;
 
 	lv2_obj::cleanup();
@@ -2213,8 +2110,7 @@ void Emulator::Stop(bool savestate, bool restart)
 	aw_colc = 0;
 	aw_used = 0;
 
-	atomic_wait::parse_hashtable([](u64 /*id*/, u32 refs, u64 ptr, u32 maxc) -> bool
-	{
+	atomic_wait::parse_hashtable([](u64 /*id*/, u32 refs, u64 ptr, u32 maxc) -> bool {
 		aw_refs += refs != 0;
 		aw_used += ptr != 0;
 
@@ -2247,9 +2143,9 @@ void Emulator::Stop(bool savestate, bool restart)
 			}
 		}
 
-		auto& ar = *this->ar;
+		auto& ar      = *this->ar;
 		const usz pos = ar.data.size();
-		std::memcpy(&ar.data[10], &pos, 8);// Set offset
+		std::memcpy(&ar.data[10], &pos, 8); // Set offset
 		ar(used_serial);
 
 		if (!file.file || (file.file.write(ar.data), !file.commit()))
@@ -2266,41 +2162,6 @@ void Emulator::Stop(bool savestate, bool restart)
 
 	if (restart)
 	{
-		if (savestate)
-		{
-			const std::string path = fs::get_cache_dir() + "/savestates/" + (m_title_id.empty() ? m_path.substr(m_path.find_last_of(fs::delim) + 1) : m_title_id) + ".SAVESTAT";
-
-			fs::pending_file file(path);
-
-			// Identifer -> version
-			std::vector<std::pair<u16, u16>> used_serial;
-			used_serial.reserve(s_serial_versions.size());
-
-			for (const serial_ver_t& ver : s_serial_versions)
-			{
-				if (ver.used)
-				{
-					used_serial.emplace_back(&ver - s_serial_versions.data(), *ver.compatible_versions.rbegin());
-				}
-			}
-
-			auto& ar = *this->ar;
-			const usz pos = ar.data.size();
-			std::memcpy(&ar.data[10], &pos, 8);// Set offset
-			ar(used_serial);
-
-			if (!file.file || (file.file.write(ar.data), !file.commit()))
-			{
-				sys_log.error("Failed to write savestate to file! (path='%s', %s)", path, fs::g_tls_error);
-			}
-			else
-			{
-				sys_log.success("Saved savestate! path='%s'", path);
-			}
-
-			ar.pos = 0;
-		}
-
 		// Reload with prior configs.
 		if (const auto error = Load(m_title_id, false, m_force_global_config); error != game_boot_result::no_errors)
 			sys_log.error("Restart failed: %s", error);
@@ -2337,8 +2198,7 @@ bool Emulator::Quit(bool force_quit)
 	m_force_boot = false;
 
 	// The callback is only used if we actually quit RPCS3
-	const auto on_exit = []()
-	{
+	const auto on_exit = []() {
 		Emu.CleanUp();
 	};
 
@@ -2360,12 +2220,12 @@ void Emulator::CleanUp()
 std::string Emulator::GetFormattedTitle(double fps) const
 {
 	rpcs3::title_format_data title_data;
-	title_data.format = g_cfg.misc.title_format.to_string();
-	title_data.title = GetTitle();
-	title_data.title_id = GetTitleID();
-	title_data.renderer = g_cfg.video.renderer.to_string();
+	title_data.format         = g_cfg.misc.title_format.to_string();
+	title_data.title          = GetTitle();
+	title_data.title_id       = GetTitleID();
+	title_data.renderer       = g_cfg.video.renderer.to_string();
 	title_data.vulkan_adapter = g_cfg.video.vk.adapter.to_string();
-	title_data.fps = fps;
+	title_data.fps            = fps;
 
 	return rpcs3::get_formatted_title(title_data);
 }
@@ -2394,7 +2254,7 @@ s32 error_code::error_report(s32 result, const char* fmt, const fmt_type_info* s
 	}
 
 	logs::channel* channel = &sys_log;
-	const char* func = "Unknown function";
+	const char* func       = "Unknown function";
 
 	if (auto ppu = get_current_cpu_thread<ppu_thread>())
 	{
@@ -2458,7 +2318,7 @@ std::set<std::string> Emulator::GetGameDirs() const
 
 	// Add more paths for disc titles.
 	if (const std::string dev_bdvd = vfs::get("/dev_bdvd/PS3_GAME");
-		!dev_bdvd.empty() && !GetTitleID().empty())
+	    !dev_bdvd.empty() && !GetTitleID().empty())
 	{
 		// Add the dev_bdvd dir if available. This is necessary for disc titles with installed updates.
 		dirs.insert(dev_bdvd + '/');
