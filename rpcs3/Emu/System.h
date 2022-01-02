@@ -64,11 +64,6 @@ enum class cfg_mode
 	default_config    // Use the default values of the config entries.
 };
 
-constexpr bool is_error(game_boot_result res)
-{
-	return res != game_boot_result::no_errors;
-}
-
 struct EmuCallbacks
 {
 	std::function<void(std::function<void()>)> call_after;
