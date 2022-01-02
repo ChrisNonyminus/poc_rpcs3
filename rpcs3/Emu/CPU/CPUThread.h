@@ -22,6 +22,7 @@ enum class cpu_flag : u32
 	incomplete_syscall, // Thread must complete the syscall after deserialization
 	signal, // Thread received a signal (HLE)
 	memory, // Thread must unlock memory mutex
+	pending, // Thread has postponed work
 
 	dbg_global_pause, // Emulation paused
 	dbg_pause, // Thread paused
@@ -35,7 +36,7 @@ constexpr auto cpu_incomplete_syscall = cpu_flag::exit + cpu_flag::incomplete_sy
 // Test stopped state
 constexpr bool is_stopped(bs_t<cpu_flag> state)
 {
-	return !!(state & (cpu_flag::stop + cpu_flag::exit));
+	return !!(state & (cpu_flag::stop + cpu_flag::exit + cpu_flag::incomplete_syscall));
 }
 
 // Test paused state
@@ -171,6 +172,9 @@ public:
 
 	// Callback for cpu_flag::suspend
 	virtual void cpu_sleep() {}
+
+	// Callback for cpu_flag::pending
+	virtual void cpu_work() {}
 
 	// Callback for cpu_flag::ret
 	virtual void cpu_return() {}

@@ -24,6 +24,8 @@
 #endif
 
 #include "Emu/NP/np_handler.h"
+#include "Emu/NP/np_helpers.h"
+#include "Emu/NP/np_dnshook.h"
 
 #include <chrono>
 #include <shared_mutex>
@@ -984,7 +986,7 @@ struct network_thread
 		WSADATA wsa_data;
 		WSAStartup(MAKEWORD(2, 2), &wsa_data);
 #endif
-		if (g_cfg.net.psn_status == np_psn_status::rpcn)
+		if (g_cfg.net.psn_status == np_psn_status::psn_rpcn)
 			list_p2p_ports.emplace(std::piecewise_construct, std::forward_as_tuple(3658), std::forward_as_tuple(3658));
 	}
 
@@ -1694,6 +1696,13 @@ error_code sys_net_bnet_connect(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sockaddr
 		std::memcpy(addr_buf.buf, addr.get_ptr(), 16);
 		name.sin_port        = std::bit_cast<u16>(psa_in->sin_port);
 		name.sin_addr.s_addr = std::bit_cast<u32>(psa_in->sin_addr);
+#ifdef _WIN32
+		// Windows doesn't support sending packets to 0.0.0.0 but it works on unixes, send to 127.0.0.1 instead
+		if (name.sin_addr.s_addr == 0x00000000)
+		{
+			name.sin_addr.s_addr = 0x0100007F;
+		}
+#endif
 	}
 	else
 	{
@@ -1763,7 +1772,7 @@ error_code sys_net_bnet_connect(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sockaddr
 				sock.p2ps.op_vport     = dst_vport;
 				sock.p2ps.cur_seq      = send_hdr.seq + 1;
 				sock.p2ps.data_beg_seq = 0;
-				sock.p2ps.data_available = 0;
+				sock.p2ps.data_available = 0u;
 				sock.p2ps.received_data.clear();
 				sock.p2ps.status       = lv2_socket::p2ps_i::stream_status::stream_handshaking;
 
@@ -1779,7 +1788,8 @@ error_code sys_net_bnet_connect(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sockaddr
 
 		if (psa_in->sin_port == 53)
 		{
-			auto& nph = g_fxo->get<named_thread<np_handler>>();
+			auto& dnshook = g_fxo->get<np::dnshook>();
+			auto& nph = g_fxo->get<named_thread<np::np_handler>>();
 
 			// Hack for DNS
 			name.sin_port        = std::bit_cast<u16, be_t<u16>>(53);
@@ -1787,7 +1797,7 @@ error_code sys_net_bnet_connect(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sockaddr
 
 			sys_net.notice("sys_net_bnet_connect: using DNS...");
 
-			nph.add_dns_spy(s);
+			dnshook.add_dns_spy(s);
 		}
 		else if (_addr->sa_family != SYS_NET_AF_INET)
 		{
@@ -1987,7 +1997,7 @@ error_code sys_net_bnet_getsockname(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sock
 		return -SYS_NET_EINVAL;
 	}
 
-	::sockaddr_storage native_addr;
+	::sockaddr_storage native_addr{};
 	::socklen_t native_addrlen = sizeof(native_addr);
 
 	lv2_socket_type type;
@@ -1999,6 +2009,12 @@ error_code sys_net_bnet_getsockname(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sock
 
 		type = sock.type;
 		p2p_vport = sock.p2p.vport;
+
+		// Unbound P2P socket special case
+		if ((sock.type == SYS_NET_SOCK_DGRAM_P2P || sock.type == SYS_NET_SOCK_STREAM_P2P) && sock.socket == 0)
+		{
+			return {};
+		}
 
 		if (::getsockname(sock.socket, reinterpret_cast<struct sockaddr*>(&native_addr), &native_addrlen) == 0)
 		{
@@ -2012,8 +2028,6 @@ error_code sys_net_bnet_getsockname(ppu_thread& ppu, s32 s, vm::ptr<sys_net_sock
 			// windows doesn't support getsockname for sockets that are not bound
 			if (get_native_error() == WSAEINVAL)
 			{
-				memset(&native_addr, 0, native_addrlen);
-				native_addr.ss_family = AF_INET;
 				return {};
 			}
 		}
@@ -2335,7 +2349,7 @@ error_code sys_net_bnet_recvfrom(ppu_thread& ppu, s32 s, vm::ptr<void> buf, u32 
 		return -SYS_NET_EINVAL;
 	}
 
-	if (flags & ~(SYS_NET_MSG_PEEK | SYS_NET_MSG_DONTWAIT | SYS_NET_MSG_WAITALL))
+	if (flags & ~(SYS_NET_MSG_PEEK | SYS_NET_MSG_DONTWAIT | SYS_NET_MSG_WAITALL | SYS_NET_MSG_USECRYPTO | SYS_NET_MSG_USESIGNATURE))
 	{
 		fmt::throw_exception("sys_net_bnet_recvfrom(s=%d): unknown flags (0x%x)", flags);
 	}
@@ -2366,10 +2380,12 @@ error_code sys_net_bnet_recvfrom(ppu_thread& ppu, s32 s, vm::ptr<void> buf, u32 
 
 		//if (!(sock.events & lv2_socket::poll::read))
 		{
-			auto& nph = g_fxo->get<named_thread<np_handler>>();
-			if (nph.is_dns(s) && nph.is_dns_queue(s))
+			auto& dnshook = g_fxo->get<np::dnshook>();
+			if (dnshook.is_dns(s) && dnshook.is_dns_queue(s))
 			{
-				const auto packet = nph.get_dns_packet(s);
+				auto& nph = g_fxo->get<named_thread<np::np_handler>>();
+
+				const auto packet = dnshook.get_dns_packet(s);
 				ensure(packet.size() < len);
 
 				memcpy(buf.get_ptr(), packet.data(), packet.size());
@@ -2411,8 +2427,8 @@ error_code sys_net_bnet_recvfrom(ppu_thread& ppu, s32 s, vm::ptr<void> buf, u32 
 			{
 				const auto get_data = [&](unsigned char *dest_buf)
 				{
-					const u32 to_give = std::min(sock.p2ps.data_available, len);
-					sys_net.trace("STREAM-P2P socket had %d available, given %d", sock.p2ps.data_available, to_give);
+					const u32 to_give = std::min<u32>(sock.p2ps.data_available, len);
+					sys_net.trace("STREAM-P2P socket had %u available, given %u", sock.p2ps.data_available, to_give);
 
 					u32 left_to_give = to_give;
 					while (left_to_give)
@@ -2594,7 +2610,7 @@ error_code sys_net_bnet_recvfrom(ppu_thread& ppu, s32 s, vm::ptr<void> buf, u32 
 					break;
 				}
 
-				ppu.state += cpu_incomplete_syscall;
+				ppu.state += cpu_flag::incomplete_syscall;
 				return {};
 			}
 
@@ -2663,7 +2679,7 @@ error_code sys_net_bnet_sendto(ppu_thread& ppu, s32 s, vm::cptr<void> buf, u32 l
 
 	sys_net.warning("sys_net_bnet_sendto(s=%d, buf=*0x%x, len=%u, flags=0x%x, addr=*0x%x, addrlen=%u)", s, buf, len, flags, addr, addrlen);
 
-	if (flags & ~(SYS_NET_MSG_DONTWAIT | SYS_NET_MSG_WAITALL))
+	if (flags & ~(SYS_NET_MSG_DONTWAIT | SYS_NET_MSG_WAITALL | SYS_NET_MSG_USECRYPTO | SYS_NET_MSG_USESIGNATURE))
 	{
 		fmt::throw_exception("sys_net_bnet_sendto(s=%d): unknown flags (0x%x)", flags);
 	}
@@ -2701,6 +2717,14 @@ error_code sys_net_bnet_sendto(ppu_thread& ppu, s32 s, vm::cptr<void> buf, u32 l
 		name.sin_family      = AF_INET;
 		name.sin_port        = std::bit_cast<u16>(psa_in->sin_port);
 		name.sin_addr.s_addr = std::bit_cast<u32>(psa_in->sin_addr);
+
+#ifdef _WIN32
+		// Windows doesn't support sending packets to 0.0.0.0 but it works on unixes, send to 127.0.0.1 instead
+		if (name.sin_addr.s_addr == 0x00000000)
+		{
+			name.sin_addr.s_addr = 0x0100007F;
+		}
+#endif
 
 		char ip_str[16];
 		inet_ntop(AF_INET, &name.sin_addr, ip_str, sizeof(ip_str));
@@ -2746,7 +2770,7 @@ error_code sys_net_bnet_sendto(ppu_thread& ppu, s32 s, vm::cptr<void> buf, u32 l
 		}
 		else if (type == SYS_NET_SOCK_STREAM_P2P)
 		{
-			constexpr s64 max_data_len = (65535 - (sizeof(u16) + sizeof(lv2_socket::p2ps_i::encapsulated_tcp)));
+			constexpr u32 max_data_len = (65535 - (sizeof(u16) + sizeof(lv2_socket::p2ps_i::encapsulated_tcp)));
 
 			// Prepare address
 			name.sin_family = AF_INET;
@@ -2758,10 +2782,10 @@ error_code sys_net_bnet_sendto(ppu_thread& ppu, s32 s, vm::cptr<void> buf, u32 l
 			tcp_header.dst_port = sock.p2ps.op_vport;
 			// chop it up
 			std::vector<std::vector<u8>> stream_packets;
-			s64 cur_total_len = len;
+			u32 cur_total_len = len;
 			while(cur_total_len > 0)
 			{
-				s64 cur_data_len;
+				u32 cur_data_len;
 				if (cur_total_len >= max_data_len)
 					cur_data_len = max_data_len;
 				else
@@ -2770,7 +2794,7 @@ error_code sys_net_bnet_sendto(ppu_thread& ppu, s32 s, vm::cptr<void> buf, u32 l
 				tcp_header.length = cur_data_len;
 				tcp_header.seq = sock.p2ps.cur_seq;
 
-				auto packet       = nt_p2p_port::generate_u2s_packet(tcp_header, &_buf[len - cur_total_len], cur_data_len);
+				auto packet = nt_p2p_port::generate_u2s_packet(tcp_header, &_buf[len - cur_total_len], cur_data_len);
 				nt_p2p_port::send_u2s_packet(sock, s, std::move(packet), &name, tcp_header.seq);
 
 				cur_total_len -= cur_data_len;
@@ -2783,17 +2807,18 @@ error_code sys_net_bnet_sendto(ppu_thread& ppu, s32 s, vm::cptr<void> buf, u32 l
 
 		//if (!(sock.events & lv2_socket::poll::write))
 		{
-			auto& nph = g_fxo->get<named_thread<np_handler>>();
+			auto& dnshook = g_fxo->get<np::dnshook>();
 			if (addr && type == SYS_NET_SOCK_DGRAM && psa_in->sin_port == 53)
 			{
-				nph.add_dns_spy(s);
+				dnshook.add_dns_spy(s);
 			}
 
-			if (nph.is_dns(s))
+			if (dnshook.is_dns(s))
 			{
-				const s32 ret_analyzer = nph.analyze_dns_packet(s, reinterpret_cast<const u8*>(_buf.data()), len);
+				const s32 ret_analyzer = dnshook.analyze_dns_packet(s, reinterpret_cast<const u8*>(_buf.data()), len);
 
 				// If we're not connected just never send the packet and pretend we did
+				auto& nph = g_fxo->get<named_thread<np::np_handler>>();
 				if (!nph.get_net_status())
 				{
 					native_result = data_len;
@@ -3265,8 +3290,8 @@ error_code sys_net_bnet_close(ppu_thread& ppu, s32 s)
 		}
 	}
 
-	auto& nph = g_fxo->get<named_thread<np_handler>>();
-	nph.remove_dns_spy(s);
+	auto& dnshook = g_fxo->get<np::dnshook>();
+	dnshook.remove_dns_spy(s);
 
 	return CELL_OK;
 }
@@ -3340,7 +3365,7 @@ error_code sys_net_bnet_poll(ppu_thread& ppu, vm::ptr<sys_net_pollfd> fds, s32 n
 					{
 						if ((fds[i].events & SYS_NET_POLLIN) && sock->p2ps.data_available)
 						{
-							sys_net.trace("[P2PS] p2ps has %d bytes available", sock->p2ps.data_available);
+							sys_net.trace("[P2PS] p2ps has %u bytes available", sock->p2ps.data_available);
 							fds_buf[i].revents |= SYS_NET_POLLIN;
 						}
 
@@ -3357,8 +3382,8 @@ error_code sys_net_bnet_poll(ppu_thread& ppu, vm::ptr<sys_net_pollfd> fds, s32 n
 				else
 				{
 					// Check for fake packet for dns interceptions
-					auto& nph = g_fxo->get<named_thread<np_handler>>();
-					if (fds_buf[i].events & SYS_NET_POLLIN && nph.is_dns(fds_buf[i].fd) && nph.is_dns_queue(fds_buf[i].fd))
+					auto& dnshook = g_fxo->get<np::dnshook>();
+					if (fds_buf[i].events & SYS_NET_POLLIN && dnshook.is_dns(fds_buf[i].fd) && dnshook.is_dns_queue(fds_buf[i].fd))
 						fds_buf[i].revents |= SYS_NET_POLLIN;
 
 					if (fds_buf[i].events & ~(SYS_NET_POLLIN | SYS_NET_POLLOUT | SYS_NET_POLLERR))
@@ -3511,7 +3536,15 @@ error_code sys_net_bnet_select(ppu_thread& ppu, s32 nfds, vm::ptr<sys_net_fd_set
 
 	if (exceptfds)
 	{
-		sys_net.error("sys_net_bnet_select(): exceptfds not implemented");
+		struct log_t
+		{
+			atomic_t<bool> logged = false;
+		};
+
+		if (!g_fxo->get<log_t>().logged.exchange(true))
+		{
+			sys_net.error("sys_net_bnet_select(): exceptfds not implemented");
+		}
 	}
 
 	sys_net_fd_set rread{}, _readfds{};
@@ -3794,8 +3827,8 @@ error_code sys_net_infoctl(ppu_thread& ppu, s32 cmd, vm::ptr<void> arg)
 		char buffer[nameserver.size() + 80]{};
 		std::memcpy(buffer, nameserver.data(), nameserver.size());
 
-		auto& nph = g_fxo->get<named_thread<np_handler>>();
-		const auto dns_str = np_handler::ip_to_string(nph.get_dns_ip());
+		auto& nph = g_fxo->get<named_thread<np::np_handler>>();
+		const auto dns_str = np::ip_to_string(nph.get_dns_ip());
 		std::memcpy(buffer + nameserver.size() - 1, dns_str.data(), dns_str.size());
 
 		std::string_view name{buffer};

@@ -14,6 +14,8 @@
 
 #include <thread>
 
+LOG_CHANNEL(vfs_log, "VFS");
+
 struct vfs_directory
 {
 	// Real path (empty if root or not exists)
@@ -45,8 +47,11 @@ bool vfs::mount(std::string_view vpath, std::string_view path)
 	if (vpath.empty())
 	{
 		// Empty relative path, should set relative path base; unsupported
+		vfs_log.error("Cannot mount empty path to \"%s\"", path);
 		return false;
 	}
+
+	const std::string_view vpath_backup = vpath;
 
 	for (std::vector<vfs_directory*> list{&table.root};;)
 	{
@@ -56,6 +61,7 @@ bool vfs::mount(std::string_view vpath, std::string_view path)
 		if (pos == 0)
 		{
 			// Mounting relative path is not supported
+			vfs_log.error("Cannot mount relative path \"%s\" to \"%s\"", vpath_backup, path);
 			return false;
 		}
 
@@ -64,6 +70,7 @@ bool vfs::mount(std::string_view vpath, std::string_view path)
 			// Mounting completed
 			list.back()->path = Emu.GetCallbacks().resolve_path(path);
 			list.back()->path += '/';
+			vfs_log.notice("Mounted path \"%s\" to \"%s\"", vpath_backup, list.back()->path);
 			return true;
 		}
 
@@ -315,6 +322,9 @@ std::string vfs::retrieve(std::string_view path, const vfs_directory* node, std:
 	
 	mount_path->emplace_back();
 
+	// Try to extract host root mount point name (if exists)
+	std::string_view host_root_name;
+
 	for (const auto& [name, dir] : node->dirs)
 	{
 		mount_path->back() = name;
@@ -323,11 +333,16 @@ std::string vfs::retrieve(std::string_view path, const vfs_directory* node, std:
 		{
 			return res;
 		}
+
+		if (dir.path == "/"sv)
+		{
+			host_root_name = name;
+		}
 	}
 
-	mount_path->resize(mount_path->size() - 1);
+	mount_path->pop_back();
 
-	if (!node->path.empty() && path.starts_with(node->path))
+	if (node->path.size() > 1 && path.starts_with(node->path))
 	{
 		auto unescape_path = [](std::string_view path)
 		{
@@ -349,6 +364,25 @@ std::string vfs::retrieve(std::string_view path, const vfs_directory* node, std:
 		}
 
 		result += unescape_path(path.substr(node->path.size()));
+		return result;
+	}
+
+	if (!host_root_name.empty())
+	{
+		// If failed to find mount point for path and /host_root is mounted
+		// Prepend "/host_root" to path and return the constructed string
+		std::string result{"/"};
+
+		for (const auto& name : *mount_path)
+		{
+			result += name;
+			result += '/';
+		}
+
+		result += host_root_name;
+		result += '/';
+
+		result += path;
 		return result;
 	}
 

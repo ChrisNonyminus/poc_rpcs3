@@ -188,8 +188,7 @@ error_code sys_ppu_thread_join(ppu_thread& ppu, u32 thread_id, vm::ptr<u64> vptr
 	if (thread->joiner != ppu_join_status::exited)
 	{
 		// Thread aborted, log it later
-		ppu.state += cpu_incomplete_syscall;
-		ppu.state += cpu_flag::exit;
+		ppu.state += cpu_flag::incomplete_syscall;
 		return {};
 	}
 
@@ -257,7 +256,7 @@ error_code sys_ppu_thread_detach(ppu_thread& ppu, u32 thread_id)
 
 		// Remove ID on EAGAIN
 		return result != CELL_EAGAIN;
-	}).ptr;
+	});
 
 	if (result)
 	{

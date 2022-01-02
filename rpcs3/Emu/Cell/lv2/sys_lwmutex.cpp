@@ -25,7 +25,7 @@ error_code _sys_lwmutex_create(ppu_thread& ppu, vm::ptr<u32> lwmutex_id, u32 pro
 {
 	ppu.state += cpu_flag::wait;
 
-	sys_lwmutex.warning(u8"_sys_lwmutex_create(lwmutex_id=*0x%x, protocol=0x%x, control=*0x%x, has_name=0x%x, name=0x%llx (Ã¢â‚¬Å“%sÃ¢â‚¬Â))", lwmutex_id, protocol, control, has_name, name, lv2_obj::name64(std::bit_cast<be_t<u64>>(name)));
+	sys_lwmutex.trace(u8"_sys_lwmutex_create(lwmutex_id=*0x%x, protocol=0x%x, control=*0x%x, has_name=0x%x, name=0x%llx (“%s”))", lwmutex_id, protocol, control, has_name, name, lv2_obj::name64(std::bit_cast<be_t<u64>>(name)));
 
 	if (protocol != SYS_SYNC_FIFO && protocol != SYS_SYNC_RETRY && protocol != SYS_SYNC_PRIORITY)
 	{
@@ -51,7 +51,7 @@ error_code _sys_lwmutex_destroy(ppu_thread& ppu, u32 lwmutex_id)
 {
 	ppu.state += cpu_flag::wait;
 
-	sys_lwmutex.warning("_sys_lwmutex_destroy(lwmutex_id=0x%x)", lwmutex_id);
+	sys_lwmutex.trace("_sys_lwmutex_destroy(lwmutex_id=0x%x)", lwmutex_id);
 
 	std::shared_ptr<lv2_lwmutex> _mutex;
 
@@ -115,7 +115,7 @@ error_code _sys_lwmutex_destroy(ppu_thread& ppu, u32 lwmutex_id)
 
 			if (ppu.is_stopped())
 			{
-				ppu.state += cpu_incomplete_syscall;
+				ppu.state += cpu_flag::incomplete_syscall;
 				return {};
 			}
 
@@ -198,7 +198,7 @@ error_code _sys_lwmutex_lock(ppu_thread& ppu, u32 lwmutex_id, u64 timeout)
 				break;
 			}
 
-			ppu.state += cpu_incomplete_syscall;
+			ppu.state += cpu_flag::incomplete_syscall;
 			return {};
 		}
 
@@ -281,8 +281,7 @@ error_code _sys_lwmutex_unlock(ppu_thread& ppu, u32 lwmutex_id)
 		{
 			if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 			{
-				ppu.state += cpu_incomplete_syscall;
-				ppu.state += cpu_flag::exit;
+				ppu.state += cpu_flag::incomplete_syscall;
 				return;
 			}
 
@@ -315,8 +314,7 @@ error_code _sys_lwmutex_unlock2(ppu_thread& ppu, u32 lwmutex_id)
 		{
 			if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 			{
-				ppu.state += cpu_incomplete_syscall;
-				ppu.state += cpu_flag::exit;
+				ppu.state += cpu_flag::incomplete_syscall;
 				return;
 			}
 

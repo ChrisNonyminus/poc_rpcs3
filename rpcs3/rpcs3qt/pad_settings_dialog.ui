@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>866</width>
-    <height>715</height>
+    <width>500</width>
+    <height>380</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -37,8 +37,8 @@
        <rect>
         <x>0</x>
         <y>0</y>
-        <width>848</width>
-        <height>668</height>
+        <width>858</width>
+        <height>715</height>
        </rect>
       </property>
       <widget class="QWidget" name="tab">
@@ -1414,14 +1414,8 @@
                    <height>256</height>
                   </size>
                  </property>
-                 <property name="text">
-                  <string/>
-                 </property>
-                 <property name="textFormat">
-                  <enum>Qt::AutoText</enum>
-                 </property>
                  <property name="pixmap">
-                  <pixmap resource="../resources.qrc">:/Icons/controller.png</pixmap>
+                  <pixmap resource="../resources.qrc">:/Icons/DualShock_3.svg</pixmap>
                  </property>
                  <property name="scaledContents">
                   <bool>true</bool>

@@ -516,7 +516,7 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 			if (auto cpu = get_current_cpu_thread())
 			{
 				cpu->state += cpu_flag::exit;
-				cpu->state += cpu_incomplete_syscall;
+				cpu->state += cpu_flag::incomplete_syscall;
 			}
 
 			return {};
@@ -767,7 +767,7 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 			if (auto cpu = get_current_cpu_thread())
 			{
 				cpu->state += cpu_flag::exit;
-				cpu->state += cpu_incomplete_syscall;
+				cpu->state += cpu_flag::incomplete_syscall;
 			}
 
 			break;
@@ -791,6 +791,11 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 		typedef void (*CPUSTEP)();
 		CPUSTEP CPU_STEP = (CPUSTEP)GetProcAddress(vanguard, "CPU_STEP");
 		CPU_STEP();
+		if (get_current_cpu_thread())
+		{
+			// VBLANK thread only
+			return CELL_EINVAL;
+		}
 
 		// NOTE: There currently seem to only be 2 active heads on PS3
 		ensure(a3 < 2);
@@ -802,7 +807,8 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 		// todo: this is wrong and should be 'second' vblank handler and freq, but since currently everything is reported as being 59.94, this should be fine
 		vm::_ref<u32>(render->device_addr + 0x30) = 1;
 
-		const u64 current_time = rsxTimeStamp();
+		// Time point is supplied in argument 4
+		const u64 current_time = a4;
 
 		driverInfo.head[a3].lastSecondVTime = current_time;
 
@@ -830,7 +836,7 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 			if (auto cpu = get_current_cpu_thread())
 			{
 				cpu->state += cpu_flag::exit;
-				cpu->state += cpu_incomplete_syscall;
+				cpu->state += cpu_flag::incomplete_syscall;
 			}
 
 			break;

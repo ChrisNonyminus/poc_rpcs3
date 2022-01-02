@@ -79,6 +79,24 @@ void keyboard_pad_handler::Key(const u32 code, bool pressed, u16 value)
 
 	for (auto& pad : m_pads_internal)
 	{
+		// Find out if special buttons are pressed (introduced by RPCS3).
+		// Activate the buttons here if possible since keys don't auto-repeat. This ensures that they are already pressed in the following loop.
+		bool adjust_pressure = false;
+
+		if (pad.m_pressure_intensity_button_index >= 0)
+		{
+			Button& pressure_intensity_button = pad.m_buttons[pad.m_pressure_intensity_button_index];
+
+			if (pressure_intensity_button.m_keyCode == code)
+			{
+				pressure_intensity_button.m_pressed = pressed;
+				pressure_intensity_button.m_value = value;
+			}
+
+			adjust_pressure = pressure_intensity_button.m_pressed;
+		}
+
+		// Handle buttons
 		for (Button& button : pad.m_buttons)
 		{
 			if (button.m_keyCode != code)
@@ -100,11 +118,21 @@ void keyboard_pad_handler::Key(const u32 code, bool pressed, u16 value)
 
 			if (update_button)
 			{
-				button.m_value = pressed ? value : 0;
+				if (pressed)
+				{
+					// Modify pressure if necessary if the button was pressed
+					button.m_value = adjust_pressure ? pad.m_pressure_intensity : value;
+				}
+				else
+				{
+					button.m_value = 0;
+				}
+
 				button.m_pressed = pressed;
 			}
 		}
 
+		// Handle sticks
 		for (usz i = 0; i < pad.m_sticks.size(); i++)
 		{
 			const bool is_max = pad.m_sticks[i].m_keyCodeMax == code;
@@ -392,8 +420,8 @@ void keyboard_pad_handler::mouseMoveEvent(QMouseEvent* event)
 		last_pos_y = event->y();
 	}
 
-	movement_x = m_multi_x * movement_x;
-	movement_y = m_multi_y * movement_y;
+	movement_x *= m_multi_x;
+	movement_y *= m_multi_y;
 
 	int deadzone_x = 0;
 	int deadzone_y = 0;
@@ -756,8 +784,7 @@ bool keyboard_pad_handler::bindPadToDevice(std::shared_ptr<Pad> pad, const std::
 	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL1, find_key(cfg->r3),       CELL_PAD_CTRL_R3);
 	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL1, find_key(cfg->l3),       CELL_PAD_CTRL_L3);
 	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL1, find_key(cfg->select),   CELL_PAD_CTRL_SELECT);
-	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL2, find_key(cfg->ps),       0x100/*CELL_PAD_CTRL_PS*/);// TODO: PS button support
-	//pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL2, 0,                             0x0); // Reserved (and currently not in use by rpcs3 at all)
+	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL2, find_key(cfg->ps),       CELL_PAD_CTRL_PS);
 	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL2, find_key(cfg->square),   CELL_PAD_CTRL_SQUARE);
 	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL2, find_key(cfg->cross),    CELL_PAD_CTRL_CROSS);
 	pad->m_buttons.emplace_back(CELL_PAD_BTN_OFFSET_DIGITAL2, find_key(cfg->circle),   CELL_PAD_CTRL_CIRCLE);
@@ -850,16 +877,14 @@ void keyboard_pad_handler::ThreadProc()
 		return (v0 <= v1) ? std::ceil(res) : std::floor(res);
 	};
 
-	for (uint i = 0; i < m_bindings.size(); i++)
+	for (uint i = 0; i < m_pads_internal.size(); i++)
 	{
-		auto& pad = m_bindings[i];
-		pad->m_buttons = m_pads_internal[i].m_buttons;
-		pad->m_sticks = m_pads_internal[i].m_sticks;
+		auto& pad = m_pads_internal[i];
 
 		if (last_connection_status[i] == false)
 		{
-			pad->m_port_status |= CELL_PAD_STATUS_CONNECTED;
-			pad->m_port_status |= CELL_PAD_STATUS_ASSIGN_CHANGES;
+			m_bindings[i]->m_port_status |= CELL_PAD_STATUS_CONNECTED;
+			m_bindings[i]->m_port_status |= CELL_PAD_STATUS_ASSIGN_CHANGES;
 			last_connection_status[i] = true;
 			connected_devices++;
 		}
@@ -867,25 +892,25 @@ void keyboard_pad_handler::ThreadProc()
 		{
 			if (update_sticks)
 			{
-				for (int j = 0; j < static_cast<int>(pad->m_sticks.size()); j++)
+				for (int j = 0; j < static_cast<int>(pad.m_sticks.size()); j++)
 				{
 					const f32 stick_lerp_factor = (j < 2) ? m_l_stick_lerp_factor : m_r_stick_lerp_factor;
 
 					// we already applied the following values on keypress if we used factor 1
 					if (stick_lerp_factor < 1.0f)
 					{
-						const f32 v0 = static_cast<f32>(pad->m_sticks[j].m_value);
+						const f32 v0 = static_cast<f32>(pad.m_sticks[j].m_value);
 						const f32 v1 = static_cast<f32>(m_stick_val[j]);
 						const f32 res = get_lerped(v0, v1, stick_lerp_factor);
 
-						pad->m_sticks[j].m_value = static_cast<u16>(res);
+						pad.m_sticks[j].m_value = static_cast<u16>(res);
 					}
 				}
 			}
 
 			if (update_buttons)
 			{
-				for (auto& button : pad->m_buttons)
+				for (auto& button : pad.m_buttons)
 				{
 					if (button.m_analog)
 					{
@@ -918,34 +943,39 @@ void keyboard_pad_handler::ThreadProc()
 		}
 	}
 
-	if (!m_mouse_wheel_used)
+	if (m_mouse_wheel_used)
 	{
-		return;
+		// Releases the wheel buttons 0,1 sec after they've been triggered
+		// Next activation is set to distant future to avoid activating this on every proc
+		const auto update_threshold = now - std::chrono::milliseconds(100);
+		const auto distant_future = now + std::chrono::hours(24);
+
+		if (update_threshold >= m_last_wheel_move_up)
+		{
+			Key(mouse::wheel_up, false);
+			m_last_wheel_move_up = distant_future;
+		}
+		if (update_threshold >= m_last_wheel_move_down)
+		{
+			Key(mouse::wheel_down, false);
+			m_last_wheel_move_down = distant_future;
+		}
+		if (update_threshold >= m_last_wheel_move_left)
+		{
+			Key(mouse::wheel_left, false);
+			m_last_wheel_move_left = distant_future;
+		}
+		if (update_threshold >= m_last_wheel_move_right)
+		{
+			Key(mouse::wheel_right, false);
+			m_last_wheel_move_right = distant_future;
+		}
 	}
 
-	// Releases the wheel buttons 0,1 sec after they've been triggered
-	// Next activation is set to distant future to avoid activating this on every proc
-	const auto update_threshold = now - std::chrono::milliseconds(100);
-	const auto distant_future = now + std::chrono::hours(24);
-
-	if (update_threshold >= m_last_wheel_move_up)
+	for (uint i = 0; i < m_bindings.size(); i++)
 	{
-		Key(mouse::wheel_up, false);
-		m_last_wheel_move_up = distant_future;
-	}
-	if (update_threshold >= m_last_wheel_move_down)
-	{
-		Key(mouse::wheel_down, false);
-		m_last_wheel_move_down = distant_future;
-	}
-	if (update_threshold >= m_last_wheel_move_left)
-	{
-		Key(mouse::wheel_left, false);
-		m_last_wheel_move_left = distant_future;
-	}
-	if (update_threshold >= m_last_wheel_move_right)
-	{
-		Key(mouse::wheel_right, false);
-		m_last_wheel_move_right = distant_future;
+		auto& pad = m_bindings[i];
+		pad->m_buttons = m_pads_internal[i].m_buttons;
+		pad->m_sticks = m_pads_internal[i].m_sticks;
 	}
 }

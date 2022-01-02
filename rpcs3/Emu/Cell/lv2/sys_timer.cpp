@@ -400,7 +400,7 @@ error_code sys_timer_usleep(ppu_thread& ppu, u64 sleep_time)
 
 		if (!lv2_obj::wait_timeout<true>(sleep_time))
 		{
-			ppu.state += cpu_incomplete_syscall;
+			ppu.state += cpu_flag::incomplete_syscall;
 		}
 	}
 	else

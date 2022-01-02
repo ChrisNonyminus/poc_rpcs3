@@ -138,6 +138,9 @@ class GLGSRender : public GSRender, public ::rsx::reports::ZCULL_control
 	std::unordered_map<GLenum, std::unique_ptr<gl::texture>> m_null_textures;
 	std::vector<u8> m_scratch_buffer;
 
+	// Occlusion query type, can be SAMPLES_PASSED or ANY_SAMPLES_PASSED
+	GLenum m_occlusion_type = GL_ANY_SAMPLES_PASSED;
+
 public:
 	u64 get_cycles() final;
 

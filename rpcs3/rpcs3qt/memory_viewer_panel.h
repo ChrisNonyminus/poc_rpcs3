@@ -87,9 +87,9 @@ struct memory_viewer_handle
 	static constexpr u32 id_step = 1;
 	static constexpr u32 id_count = 2048;
 
-	template <typename... Args>
-	memory_viewer_handle(QWidget* parent, Args&&... args)
-		: m_mvp(new memory_viewer_panel(parent, std::forward<Args>(args)...))
+	template <typename... Args> requires (std::is_constructible_v<memory_viewer_panel, Args&&...>)
+	memory_viewer_handle(Args&&... args)
+		: m_mvp(new memory_viewer_panel(std::forward<Args>(args)...))
 	{
 	}
 

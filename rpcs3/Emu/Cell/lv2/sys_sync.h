@@ -136,8 +136,9 @@ public:
 		{
 			const auto res = queue.front();
 
-			if (static_cast<E*>(res)->state.none_of(cpu_flag::incomplete_syscall))
+			if (res->state.none_of(cpu_flag::incomplete_syscall))
 				queue.pop_front();
+
 			return res;
 		}
 
@@ -157,8 +158,9 @@ public:
 
 		const auto res = *it;
 
-		if (static_cast<E*>(res)->state.none_of(cpu_flag::incomplete_syscall))
+		if (res->state.none_of(cpu_flag::incomplete_syscall))
 			queue.erase(it);
+
 		return res;
 	}
 

@@ -161,7 +161,7 @@ error_code sys_semaphore_wait(ppu_thread& ppu, u32 sem_id, u64 timeout)
 				break;
 			}
 
-			ppu.state += cpu_incomplete_syscall;
+			ppu.state += cpu_flag::incomplete_syscall;
 			return {};
 		}
 
@@ -270,8 +270,7 @@ error_code sys_semaphore_post(ppu_thread& ppu, u32 sem_id, s32 count)
 		{
 			if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 			{
-				ppu.state += cpu_incomplete_syscall;
-				ppu.state += cpu_flag::exit;
+				ppu.state += cpu_flag::incomplete_syscall;
 				return {};
 			}
 		}

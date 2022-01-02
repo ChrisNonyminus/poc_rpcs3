@@ -164,7 +164,7 @@ error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 				break;
 			}
 
-			ppu.state += cpu_incomplete_syscall;
+			ppu.state += cpu_flag::incomplete_syscall;
 			break;
 		}
 
@@ -292,8 +292,7 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 			{
 				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.state += cpu_incomplete_syscall;
-					ppu.state += cpu_flag::exit;
+					ppu.state += cpu_flag::incomplete_syscall;
 					return {};
 				}
 
@@ -391,7 +390,7 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 				break;
 			}
 
-			ppu.state += cpu_incomplete_syscall;
+			ppu.state += cpu_flag::incomplete_syscall;
 			break;
 		}
 
@@ -511,8 +510,7 @@ error_code sys_rwlock_wunlock(ppu_thread& ppu, u32 rw_lock_id)
 		{
 			if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 			{
-				ppu.state += cpu_incomplete_syscall;
-				ppu.state += cpu_flag::exit;
+				ppu.state += cpu_flag::incomplete_syscall;
 				return {};
 			}
 

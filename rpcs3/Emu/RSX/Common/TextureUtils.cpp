@@ -436,7 +436,7 @@ namespace
 
 		for (unsigned layer = 0; layer < layer_count; layer++)
 		{
-			u16 miplevel_width_in_texel = width_in_texel, miplevel_height_in_texel = height_in_texel;
+			u16 miplevel_width_in_texel = width_in_texel, miplevel_height_in_texel = height_in_texel, miplevel_depth = depth;
 			for (unsigned mip_level = 0; mip_level < mipmap_count; mip_level++)
 			{
 				result.push_back({});
@@ -446,7 +446,7 @@ namespace
 				current_subresource_layout.height_in_texel = miplevel_height_in_texel;
 				current_subresource_layout.level = mip_level;
 				current_subresource_layout.layer = layer;
-				current_subresource_layout.depth = depth;
+				current_subresource_layout.depth = miplevel_depth;
 				current_subresource_layout.border = border_size;
 
 				if constexpr (block_edge_in_texel == 1)
@@ -482,16 +482,20 @@ namespace
 					full_height_in_block = rsx::next_pow2(current_subresource_layout.height_in_block + border_size + border_size);
 				}
 
-				const u32 slice_sz = src_pitch_in_block * block_size_in_bytes * full_height_in_block * depth;
+				const u32 slice_sz = src_pitch_in_block * block_size_in_bytes * full_height_in_block * miplevel_depth;
 				current_subresource_layout.pitch_in_block = src_pitch_in_block;
 				current_subresource_layout.data = std::span<const std::byte>(texture_data_pointer + offset_in_src, slice_sz);
 
 				offset_in_src += slice_sz;
 				miplevel_width_in_texel = std::max(miplevel_width_in_texel / 2, 1);
 				miplevel_height_in_texel = std::max(miplevel_height_in_texel / 2, 1);
+				miplevel_depth = std::max(miplevel_depth / 2, 1);
 			}
 
-			offset_in_src = utils::align(offset_in_src, 128);
+			if (!padded_row) // Only swizzled textures obey this restriction
+			{
+				offset_in_src = utils::align(offset_in_src, 128);
+			}
 		}
 
 		return result;
@@ -556,7 +560,7 @@ std::vector<rsx::subresource_layout> get_subresources_layout_impl(const RsxTextu
 	std::tie(h, depth, layer) = get_height_depth_layer(texture);
 
 	const auto format = texture.format() & ~(CELL_GCM_TEXTURE_LN | CELL_GCM_TEXTURE_UN);
-	const auto pitch = texture.pitch();
+	auto pitch = texture.pitch();
 
 	const u32 texaddr = rsx::get_address(texture.offset(), texture.location());
 	auto pixels = vm::_ptr<const std::byte>(texaddr);
@@ -566,17 +570,18 @@ std::vector<rsx::subresource_layout> get_subresources_layout_impl(const RsxTextu
 
 	if (!is_swizzled)
 	{
-		if (pitch) [[likely]]
+		if (const auto packed_pitch = rsx::get_format_packed_pitch(format, w, has_border, false); pitch < packed_pitch) [[unlikely]]
 		{
-			if (pitch < rsx::get_format_packed_pitch(format, w, has_border, false))
+			if (pitch)
 			{
 				const u32 real_width_in_block = pitch / rsx::get_format_block_size_in_bytes(format);
 				w = std::max<u16>(real_width_in_block * rsx::get_format_block_size_in_texel(format), 1);
 			}
-		}
-		else
-		{
-			w = h = depth = 1;
+			else
+			{
+				h = depth = 1;
+				pitch = packed_pitch;
+			}
 		}
 	}
 
@@ -1157,7 +1162,7 @@ namespace rsx
 			if (width > 1 || height > 1)
 			{
 				// If width == 1, the scanning just returns texel 0, so it is a valid setup
-				rsx_log.error("Invalid texture pitch setup, width=%d, height=%d, format=0x%x(0x%x)",
+				rsx_log.warning("Invalid texture pitch setup, width=%d, height=%d, format=0x%x(0x%x)",
 					width, height, format, gcm_format);
 			}
 

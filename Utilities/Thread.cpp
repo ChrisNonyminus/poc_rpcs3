@@ -1231,19 +1231,15 @@ bool handle_access_violation(u32 addr, bool is_writing, x64_context* context) no
 
 		bool handled = rsx::g_access_violation_handler(addr, is_writing);
 
+		if (cpu && (cpu->state += cpu_flag::temp, cpu->test_stopped()))
+		{
+			//
+		}
+
 		if (handled)
 		{
 			g_tls_fault_rsx++;
-			if (cpu && cpu->test_stopped())
-			{
-				//
-			}
-
 			return true;
-		}
-
-		if (cpu && cpu->test_stopped())
-		{
 		}
 	}
 
@@ -1389,11 +1385,6 @@ bool handle_access_violation(u32 addr, bool is_writing, x64_context* context) no
 
 	if (vm::check_addr(addr, is_writing ? vm::page_writable : vm::page_readable))
 	{
-		if (cpu && cpu->test_stopped())
-		{
-			//
-		}
-
 		return true;
 	}
 
@@ -1580,7 +1571,7 @@ bool handle_access_violation(u32 addr, bool is_writing, x64_context* context) no
 		}
 	}
 
-	Emu.Pause();
+	Emu.Pause(true);
 
 	if (!g_tls_access_violation_recovered)
 	{
@@ -1591,7 +1582,7 @@ bool handle_access_violation(u32 addr, bool is_writing, x64_context* context) no
 	// Do not log any further access violations in this case.
 	if (!g_tls_access_violation_recovered)
 	{
-		vm_log.fatal("Access violation %s location 0x%x (%s) [type=u%u]", is_writing ? "writing" : "reading", addr, (is_writing && vm::check_addr(addr)) ? "read-only memory" : "unmapped memory", d_size * 8);
+		vm_log.fatal("Access violation %s location 0x%x (%s) [type=u%u]", is_writing ? "writing" : (cpu && cpu->id_type() == 1 && cpu->get_pc() == addr ? "executing" : "reading"), addr, (is_writing && vm::check_addr(addr)) ? "read-only memory" : "unmapped memory", d_size * 8);
 	}
 
 	while (Emu.IsPaused())

@@ -4,6 +4,7 @@
 #include "util/logs.hpp"
 #include "util/sysinfo.hpp"
 
+#include "Utilities/Thread.h"
 #include "Input/pad_thread.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
@@ -17,20 +18,16 @@
 
 #include "Emu/Audio/AudioBackend.h"
 #include "Emu/Audio/Null/NullAudioBackend.h"
-#include "Emu/Audio/AL/OpenALBackend.h"
+#include "Emu/Audio/Cubeb/CubebBackend.h"
 #ifdef _WIN32
 #include "Emu/Audio/XAudio2/XAudio2Backend.h"
-#endif
-#ifdef HAVE_ALSA
-#include "Emu/Audio/ALSA/ALSABackend.h"
-#endif
-#ifdef HAVE_PULSE
-#include "Emu/Audio/Pulse/PulseBackend.h"
 #endif
 #ifdef HAVE_FAUDIO
 #include "Emu/Audio/FAudio/FAudioBackend.h"
 #endif
 #include <windows.h>
+
+#include <QFileInfo> // This shouldn't be outside rpcs3qt...
 
 LOG_CHANNEL(sys_log, "SYS");
 
@@ -62,12 +59,12 @@ EmuCallbacks main_application::CreateCallbacks()
 		{
 		case keyboard_handler::null:
 		{
-			fxo_serialize_body<KeyboardHandlerBase, NullKeyboardHandler>(Emu.ar.get());
+			fxo_serialize_body<KeyboardHandlerBase, NullKeyboardHandler>(Emu.DeserialManager());
 			break;
 		}
 		case keyboard_handler::basic:
 		{
-			basic_keyboard_handler* ret = fxo_serialize_body<KeyboardHandlerBase, basic_keyboard_handler>(Emu.ar.get());
+			basic_keyboard_handler* ret = fxo_serialize_body<KeyboardHandlerBase, basic_keyboard_handler>(Emu.DeserialManager());
 			ret->moveToThread(get_thread());
 			ret->SetTargetWindow(m_game_window);
 			break;
@@ -83,18 +80,18 @@ EmuCallbacks main_application::CreateCallbacks()
 		{
 			if (g_cfg.io.move == move_handler::mouse)
 			{
-				basic_mouse_handler* ret = fxo_serialize_body<MouseHandlerBase, basic_mouse_handler>(Emu.ar.get());
+				basic_mouse_handler* ret = fxo_serialize_body<MouseHandlerBase, basic_mouse_handler>(Emu.DeserialManager());
 				ret->moveToThread(get_thread());
 				ret->SetTargetWindow(m_game_window);
 			}
 			else
-				fxo_serialize_body<MouseHandlerBase, NullMouseHandler>(Emu.ar.get());
+				fxo_serialize_body<MouseHandlerBase, NullMouseHandler>(Emu.DeserialManager());
 
 			break;
 		}
 		case mouse_handler::basic:
 		{
-			basic_mouse_handler* ret = fxo_serialize_body<MouseHandlerBase, basic_mouse_handler>(Emu.ar.get());
+			basic_mouse_handler* ret = fxo_serialize_body<MouseHandlerBase, basic_mouse_handler>(Emu.DeserialManager());
 			ret->moveToThread(get_thread());
 			ret->SetTargetWindow(m_game_window);
 			break;
@@ -104,7 +101,7 @@ EmuCallbacks main_application::CreateCallbacks()
 
 	callbacks.init_pad_handler = [this](std::string_view title_id)
 	{
-		g_fxo->init<pad_thread>(get_thread(), m_game_window, title_id);
+		g_fxo->init<named_thread<pad_thread>>(get_thread(), m_game_window, title_id);
 	};
 
 	callbacks.get_audio = []() -> std::shared_ptr<AudioBackend>
@@ -116,14 +113,7 @@ EmuCallbacks main_application::CreateCallbacks()
 #ifdef _WIN32
 		case audio_renderer::xaudio: result = std::make_shared<XAudio2Backend>(); break;
 #endif
-#ifdef HAVE_ALSA
-		case audio_renderer::alsa: result = std::make_shared<ALSABackend>(); break;
-#endif
-#ifdef HAVE_PULSE
-		case audio_renderer::pulse: result = std::make_shared<PulseBackend>(); break;
-#endif
-
-		case audio_renderer::openal: result = std::make_shared<OpenALBackend>(); break;
+		case audio_renderer::cubeb: result = std::make_shared<CubebBackend>(); break;
 #ifdef HAVE_FAUDIO
 		case audio_renderer::faudio: result = std::make_shared<FAudioBackend>(); break;
 #endif
@@ -132,10 +122,15 @@ EmuCallbacks main_application::CreateCallbacks()
 		if (!result->Initialized())
 		{
 			// Fall back to a null backend if something went wrong
-			sys_log.error("Audio renderer %s could not be initialized, using a Null renderer instead", result->GetName());
+			sys_log.error("Audio renderer %s could not be initialized, using a Null renderer instead. Make sure that no other application is running that might block audio access (e.g. Netflix).", result->GetName());
 			result = std::make_shared<NullAudioBackend>();
 		}
 		return result;
+	};
+
+	callbacks.resolve_path = [](std::string_view sv)
+	{
+		return QFileInfo(QString::fromUtf8(sv.data(), static_cast<int>(sv.size()))).canonicalFilePath().toStdString();
 	};
 
 	return callbacks;

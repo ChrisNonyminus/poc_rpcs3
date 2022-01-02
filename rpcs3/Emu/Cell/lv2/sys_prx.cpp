@@ -266,7 +266,7 @@ static error_code prx_load_module(const std::string& vpath, u64 flags, vm::ptr<s
 		src = std::move(lv2_file);
 	}
 
-	u128 klic = g_fxo->get<loaded_npdrm_keys>().devKlic.load();
+	u128 klic = g_fxo->get<loaded_npdrm_keys>().last_key();
 
 	ppu_prx_object obj = decrypt_self(std::move(src), reinterpret_cast<u8*>(&klic));
 
@@ -317,7 +317,7 @@ std::shared_ptr<void> lv2_prx::load(utils::serial& ar)
 
 		if (file)
 		{
-			u128 klic = g_fxo->get<loaded_npdrm_keys>().devKlic.load();
+			u128 klic = g_fxo->get<loaded_npdrm_keys>().last_key();
 			file = make_file_view(std::move(file), offset);
 			prx = ppu_load_prx(ppu_prx_object{ decrypt_self(std::move(file), reinterpret_cast<u8*>(&klic)) }, path, 0, &ar);
 			ensure(prx);
@@ -543,7 +543,13 @@ error_code _sys_prx_start_module(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<sys
 	}
 
 	pOpt->entry.set(prx->start ? prx->start.addr() : ~0ull);
-	pOpt->entry2.set(prx->prologue ? prx->prologue.addr() : ~0ull);
+
+	// This check is probably for older fw
+	if (pOpt->size != 0x20u)
+	{
+		pOpt->entry2.set(prx->prologue ? prx->prologue.addr() : ~0ull);
+	}
+
 	return CELL_OK;
 }
 
@@ -565,6 +571,14 @@ error_code _sys_prx_stop_module(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<sys_
 		return CELL_EINVAL;
 	}
 
+	auto set_entry2 = [&](u64 addr)
+	{
+		if (pOpt->size != 0x20u)
+		{
+			pOpt->entry2.set(addr);
+		}
+	};
+
 	switch (pOpt->cmd & 0xf)
 	{
 	case 1:
@@ -581,7 +595,7 @@ error_code _sys_prx_stop_module(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<sys_
 		}
 
 		pOpt->entry.set(prx->stop ? prx->stop.addr() : ~0ull);
-		pOpt->entry2.set(prx->epilogue ? prx->epilogue.addr() : ~0ull);
+		set_entry2(prx->epilogue ? prx->epilogue.addr() : ~0ull);
 		return CELL_OK;
 	}
 	case 2:
@@ -620,7 +634,7 @@ error_code _sys_prx_stop_module(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<sys_
 		if (pOpt->cmd == 4u)
 		{
 			pOpt->entry.set(prx->stop ? prx->stop.addr() : ~0ull);
-			pOpt->entry2.set(prx->epilogue ? prx->epilogue.addr() : ~0ull);
+			set_entry2(prx->epilogue ? prx->epilogue.addr() : ~0ull);
 		}
 		else
 		{
@@ -857,7 +871,17 @@ error_code _sys_prx_get_module_info(ppu_thread& ppu, u32 id, u64 flags, vm::ptr<
 		return CELL_EFAULT;
 	}
 
-	if (pOpt->size != pOpt.size() || !pOpt->info)
+	if (pOpt->size != pOpt.size())
+	{
+		return CELL_EINVAL;
+	}
+
+	if (!pOpt->info)
+	{
+		return CELL_EFAULT;
+	}
+
+	if (pOpt->info->size != pOpt->info.size())
 	{
 		return CELL_EINVAL;
 	}
@@ -913,8 +937,33 @@ error_code _sys_prx_get_module_id_by_address(ppu_thread& ppu, u32 addr)
 {
 	ppu.state += cpu_flag::wait;
 
-	sys_prx.todo("_sys_prx_get_module_id_by_address(addr=0x%x)", addr);
-	return CELL_OK;
+	sys_prx.warning("_sys_prx_get_module_id_by_address(addr=0x%x)", addr);
+
+	if (!vm::check_addr(addr))
+	{
+		// Fast check for an invalid argument
+		return {CELL_PRX_ERROR_UNKNOWN_MODULE, addr};
+	}
+
+	const auto [prx, id] = idm::select<lv2_obj, lv2_prx>([&](u32 id, lv2_prx& prx) -> u32
+	{
+		for (const ppu_segment& seg : prx.segs)
+		{
+			if (seg.size && addr >= seg.addr && addr < seg.addr + seg.size)
+			{
+				return id;
+			}
+		}
+
+		return 0;
+	});
+
+	if (!id)
+	{
+		return {CELL_PRX_ERROR_UNKNOWN_MODULE, addr};
+	}
+
+	return not_an_error(id);
 }
 
 error_code _sys_prx_start(ppu_thread& ppu)

@@ -133,8 +133,7 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 			{
 				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.state += cpu_incomplete_syscall;
-					ppu.state += cpu_flag::exit;
+					ppu.state += cpu_flag::incomplete_syscall;
 					return 0;
 				}
 			}
@@ -146,8 +145,7 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 			{
 				if (static_cast<ppu_thread*>(result)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.state += cpu_incomplete_syscall;
-					ppu.state += cpu_flag::exit;
+					ppu.state += cpu_flag::incomplete_syscall;
 					return 0;
 				}
 
@@ -169,8 +167,7 @@ error_code _sys_lwcond_signal(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id, u6
 
 						if (static_cast<ppu_thread*>(result)->state & cpu_flag::incomplete_syscall)
 						{
-							ppu.state += cpu_incomplete_syscall;
-							ppu.state += cpu_flag::exit;
+							ppu.state += cpu_flag::incomplete_syscall;
 							return 0;
 						}
 					}
@@ -260,8 +257,7 @@ error_code _sys_lwcond_signal_all(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 			{
 				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.state += cpu_incomplete_syscall;
-					ppu.state += cpu_flag::exit;
+					ppu.state += cpu_flag::incomplete_syscall;
 					return 0;
 				}
 			}
@@ -361,8 +357,7 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 			{
 				if (static_cast<ppu_thread*>(cpu)->state & cpu_flag::incomplete_syscall)
 				{
-					ppu.state += cpu_incomplete_syscall;
-					ppu.state += cpu_flag::exit;
+					ppu.state += cpu_flag::incomplete_syscall;
 					return;
 				}
 
@@ -409,7 +404,7 @@ error_code _sys_lwcond_queue_wait(ppu_thread& ppu, u32 lwcond_id, u32 lwmutex_id
 			}
 
 			ppu.optional_syscall_state = +mutex_sleep;
-			ppu.state += cpu_incomplete_syscall;
+			ppu.state += cpu_flag::incomplete_syscall;
 			break;
 		}
 

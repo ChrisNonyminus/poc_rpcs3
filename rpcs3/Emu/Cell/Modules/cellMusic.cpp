@@ -70,7 +70,7 @@ struct music_state
 
 	music_state() = default;
 
-	void serialize_common(utils::serial& ar)
+	void save(utils::serial& ar)
 	{
 		ar(func);
 
@@ -89,12 +89,7 @@ struct music_state
 
 	music_state(utils::serial& ar)
 	{
-		serialize_common(ar);
-	}
-
-	void save(utils::serial& ar)
-	{
-		serialize_common(ar);
+		save(ar);
 	}
 };
 

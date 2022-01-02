@@ -49,6 +49,7 @@ void fmt_class_string<cpu_flag>::format(std::string& out, u64 arg)
 		case cpu_flag::ret: return "ret";
 		case cpu_flag::signal: return "sig";
 		case cpu_flag::memory: return "mem";
+		case cpu_flag::pending: return "pend";
 		case cpu_flag::dbg_global_pause: return "G-PAUSE";
 		case cpu_flag::dbg_pause: return "PAUSE";
 		case cpu_flag::dbg_step: return "STEP";
@@ -411,11 +412,6 @@ void cpu_thread::operator()()
 	}
 	if (id_type() == 2)
 	{
-		if (g_cfg.core.lower_spu_priority)
-		{
-			thread_ctrl::set_native_priority(-1);
-		}
-
 		// force input/output denormals to zero for SPU threads (FTZ/DAZ)
 		_mm_setcsr( _mm_getcsr() | 0x8040 );
 
@@ -469,7 +465,7 @@ void cpu_thread::operator()()
 		cpu_thread* _cpu = get_current_cpu_thread();
 
 		// Wait flag isn't set asynchronously so this should be thread-safe
-		if (progress == 0 && cpu_flag::wait - _cpu->state)
+		if (progress == 0 && _cpu->state.none_of(cpu_flag::wait + cpu_flag::temp))
 		{
 			// Operation just started and syscall is imminent
 			_cpu->state += cpu_flag::wait + cpu_flag::temp;
@@ -691,7 +687,7 @@ bool cpu_thread::check_state() noexcept
 			}
 
 			// Atomically clean wait flag and escape
-			if (!(flags & (cpu_flag::exit + cpu_flag::ret + cpu_flag::stop)))
+			if (!is_stopped(flags) && flags.none_of(cpu_flag::ret))
 			{
 				// Check pause flags which hold thread inside check_state (ignore suspend/debug flags on cpu_flag::temp)
 				if (flags & (cpu_flag::pause + cpu_flag::memory) || (cpu_can_stop && flags & (cpu_flag::dbg_global_pause + cpu_flag::dbg_pause + cpu_flag::suspend)))
@@ -737,6 +733,12 @@ bool cpu_thread::check_state() noexcept
 			{
 				// Restore thread in the suspend list
 				cpu_counter::add(this);
+			}
+
+			if ((state0 & (cpu_flag::pending + cpu_flag::temp)) == cpu_flag::pending)
+			{
+				// Execute pending work
+				cpu_work();
 			}
 
 			if (retval)
