@@ -74,7 +74,7 @@ struct EmuCallbacks
 	std::function<void()> on_ready;
 	std::function<bool()> on_missing_fw;
 	std::function<bool(bool, std::function<void()>)> try_to_quit; // (force_quit, on_exit) Try to close RPCS3
-	std::function<void(s32, s32)> handle_taskbar_progress; // (type, value) type: 0 for reset, 1 for increment, 2 for set_limit, 3 for set_value
+	std::function<void(s32, s32)> handle_taskbar_progress;        // (type, value) type: 0 for reset, 1 for increment, 2 for set_limit, 3 for set_value
 	std::function<void()> init_kb_handler;
 	std::function<void()> init_mouse_handler;
 	std::function<void(std::string_view title_id)> init_pad_handler;
@@ -91,7 +91,9 @@ struct EmuCallbacks
 	std::function<std::string(localized_string_id, const char*)> get_localized_string;
 	std::function<std::u32string(localized_string_id, const char*)> get_localized_u32string;
 	std::function<void(const std::string&)> play_sound;
-	std::string(*resolve_path)(std::string_view) = [](std::string_view arg){ return std::string{arg}; }; // Resolve path using Qt
+	std::string (*resolve_path)(std::string_view) = [](std::string_view arg) {
+		return std::string{arg};
+	}; // Resolve path using Qt
 };
 
 class Emulator final
@@ -102,7 +104,7 @@ class Emulator final
 
 	atomic_t<u64> m_pause_start_time{0}; // set when paused
 	atomic_t<u64> m_pause_amend_time{0}; // increased when resumed
-	atomic_t<u64> m_stop_ctr{0}; // Increments when emulation is stopped
+	atomic_t<u64> m_stop_ctr{0};         // Increments when emulation is stopped
 
 	video_renderer m_default_renderer;
 	std::string m_default_graphics_adapter;
@@ -162,8 +164,7 @@ public:
 			return m_cb.call_after(std::move(func));
 		}
 
-		std::function<void()> final_func = [this, before = IsStopped(), count = +m_stop_ctr, func = std::move(func)]
-		{
+		std::function<void()> final_func = [this, before = IsStopped(), count = +m_stop_ctr, func = std::move(func)] {
 			if (count == m_stop_ctr && before == IsStopped())
 			{
 				func();
@@ -188,7 +189,6 @@ public:
 
 	void Init(bool add_only = false);
 
-	std::unique_ptr<utils::serial> ar;
 	std::vector<std::string> argv;
 	std::vector<std::string> envp;
 	std::vector<u8> data;
@@ -269,12 +269,10 @@ public:
 
 	game_boot_result BootGame(const std::string& path, const std::string& title_id = "", bool direct = false, bool add_only = false, cfg_mode config_mode = cfg_mode::custom, const std::string& config_path = "");
 	bool BootRsxCapture(const std::string& path);
-
 	game_boot_result BootGameInState(const std::string& savestate, const std::string& title_id = "", bool direct = false, bool force_global_config = false)
 	{
 		return BootGame(savestate, title_id, direct, false);
 	}
-
 	void SetForceBoot(bool force_boot);
 
 	game_boot_result Load(const std::string& title_id = "", bool add_only = false, bool is_disc_patch = false);
@@ -286,22 +284,56 @@ public:
 	bool Pause(bool freeze_emulation = false);
 	void Resume();
 	void Stop(bool savestate = false, bool restart = false);
-	void Restart(bool savestate = false) { Stop(savestate, true); }
+	void Restart(bool savestate = false)
+	{
+		Stop(savestate, true);
+	}
 	bool Quit(bool force_quit);
 	static void CleanUp();
 
-	bool IsRunning() const { return m_state == system_state::running; }
-	bool IsPaused()  const { return m_state >= system_state::paused; } // ready/starting are also considered paused by this function
-	bool IsStopped() const { return m_state == system_state::stopped; }
-	bool IsReady()   const { return m_state == system_state::ready; }
-	bool IsStarting() const { return m_state == system_state::starting; }
-	auto GetStatus() const { system_state state = m_state; return state == system_state::frozen ? system_state::paused : state; }
+	bool IsRunning() const
+	{
+		return m_state == system_state::running;
+	}
+	bool IsPaused() const
+	{
+		return m_state >= system_state::paused;
+	} // ready/starting are also considered paused by this function
+	bool IsStopped() const
+	{
+		return m_state == system_state::stopped;
+	}
+	bool IsReady() const
+	{
+		return m_state == system_state::ready;
+	}
+	bool IsStarting() const
+	{
+		return m_state == system_state::starting;
+	}
+	auto GetStatus() const
+	{
+		system_state state = m_state;
+		return state == system_state::frozen ? system_state::paused : state;
+	}
 
-	bool HasGui() const { return m_has_gui; }
-	void SetHasGui(bool has_gui) { m_has_gui = has_gui; }
+	bool HasGui() const
+	{
+		return m_has_gui;
+	}
+	void SetHasGui(bool has_gui)
+	{
+		m_has_gui = has_gui;
+	}
 
-	void SetDefaultRenderer(video_renderer renderer) { m_default_renderer = renderer; }
-	void SetDefaultGraphicsAdapter(std::string adapter) { m_default_graphics_adapter = std::move(adapter); }
+	void SetDefaultRenderer(video_renderer renderer)
+	{
+		m_default_renderer = renderer;
+	}
+	void SetDefaultGraphicsAdapter(std::string adapter)
+	{
+		m_default_graphics_adapter = std::move(adapter);
+	}
 
 	std::string GetFormattedTitle(double fps) const;
 
