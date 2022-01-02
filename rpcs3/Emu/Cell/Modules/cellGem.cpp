@@ -94,7 +94,7 @@ public:
 
 	static constexpr auto thread_name = "Gem Thread"sv;
 
-	atomic_t<u32> state = 0;
+	atomic_t<u8> state = 0;
 
 	struct gem_color
 	{
@@ -131,6 +131,8 @@ public:
 		u64 calibration_start_us{0};                       // The start timestamp of the calibration in microseconds
 
 		static constexpr u64 calibration_time_us = 500000; // The calibration supposedly takes 0.5 seconds (500000 microseconds)
+
+		using enable_bitcopy = std::true_type;
 	};
 
 	CellGemAttribute attribute = {};
@@ -201,6 +203,31 @@ public:
 			controllers[gem_num].status = CELL_GEM_STATUS_READY;
 			controllers[gem_num].port = 7u - gem_num;
 		}
+	}
+
+	gem_config_data() = default;
+
+	void save(utils::serial& ar)
+	{
+		ar(state);
+
+		if (!state)
+		{
+			return;
+		}
+
+		if (ar.is_writing())
+		{
+			USING_SERIALIZATION_VERSION(cellGem);
+		}
+
+		ar(attribute, vc_attribute, status_flags, enable_pitch_correction, inertial_counter, controllers
+			, connected_controllers, update_started, camera_frame, memory_ptr, start_timestamp);
+	}
+
+	gem_config_data(utils::serial& ar)
+	{
+		save(ar);
 	}
 };
 
@@ -384,6 +411,12 @@ void gem_config_data::operator()()
 
 using gem_config = named_thread<gem_config_data>;
 
+template <>
+void fxo_serialize<gem_config>(utils::serial* ar)
+{
+	fxo_serialize_body<gem_config>(ar);
+}
+
 /**
  * \brief Verifies that a Move controller id is valid
  * \param gem_num Move controler ID to verify
@@ -497,7 +530,7 @@ static bool ds3_input_to_ext(const u32 port_no, const gem_config::gem_controller
 		return false;
 
 	ext.status = 0; // CELL_GEM_EXT_CONNECTED | CELL_GEM_EXT_EXT0 | CELL_GEM_EXT_EXT1
-	ext.analog_left_x = pad->m_analog_left_x;
+	ext.analog_left_x = pad->m_analog_left_x; // HACK: these pad members are actually only set in cellPad
 	ext.analog_left_y = pad->m_analog_left_y;
 	ext.analog_right_x = pad->m_analog_right_x;
 	ext.analog_right_y = pad->m_analog_right_y;

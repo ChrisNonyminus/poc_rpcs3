@@ -5,10 +5,9 @@
 #include "Emu/Cell/Modules/cellOskDialog.h"
 #include "Emu/Cell/Modules/cellSaveData.h"
 #include "Emu/Cell/Modules/sceNpTrophy.h"
+#include "Emu/Io/Null/null_camera_handler.h"
 
 #include <clocale>
-
-#include <QFileInfo>
 
 // For now, a trivial constructor/destructor. May add command line usage later.
 headless_application::headless_application(int& argc, char** argv) : QCoreApplication(argc, argv)
@@ -63,17 +62,17 @@ void headless_application::InitializeCallbacks()
 		RequestCallAfter(std::move(func));
 	};
 
-	callbacks.init_gs_render = []()
+	callbacks.init_gs_render = [](utils::serial* ar)
 	{
 		switch (const video_renderer type = g_cfg.video.renderer)
 		{
 		case video_renderer::null:
 		{
-			g_fxo->init<rsx::thread, named_thread<NullGSRender>>();
+			g_fxo->init<rsx::thread, named_thread<NullGSRender>>(ar);
 			break;
 		}
 		case video_renderer::opengl:
-#if defined(_WIN32) || defined(HAVE_VULKAN)
+#if defined(HAVE_VULKAN)
 		case video_renderer::vulkan:
 #endif
 		{
@@ -85,6 +84,23 @@ void headless_application::InitializeCallbacks()
 			fmt::throw_exception("Invalid video renderer: %s", type);
 		}
 		}
+	};
+
+	callbacks.get_camera_handler = []() -> std::shared_ptr<camera_handler_base>
+	{
+		switch (g_cfg.io.camera.get())
+		{
+		case camera_handler::null:
+		case camera_handler::fake:
+		{
+			return std::make_shared<null_camera_handler>();
+		}
+		case camera_handler::qt:
+		{
+			fmt::throw_exception("Headless mode can not be used with this camera handler. Current handler: %s", g_cfg.io.camera.get());
+		}
+		}
+		return nullptr;
 	};
 
 	callbacks.get_gs_frame = []() -> std::unique_ptr<GSFrameBase>
@@ -107,15 +123,14 @@ void headless_application::InitializeCallbacks()
 	callbacks.on_stop   = []() {};
 	callbacks.on_ready  = []() {};
 
+	callbacks.on_missing_fw = []() { return false; };
+
+	callbacks.handle_taskbar_progress = [](s32, s32) {};
+
 	callbacks.get_localized_string    = [](localized_string_id, const char*) -> std::string { return {}; };
 	callbacks.get_localized_u32string = [](localized_string_id, const char*) -> std::u32string { return {}; };
 
 	callbacks.play_sound = [](const std::string&){};
-
-	callbacks.resolve_path = [](std::string_view sv)
-	{
-		return QFileInfo(QString::fromUtf8(sv.data(), static_cast<int>(sv.size()))).canonicalFilePath().toStdString();
-	};
 
 	Emu.SetCallbacks(std::move(callbacks));
 }

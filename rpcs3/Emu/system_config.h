@@ -14,7 +14,7 @@ struct cfg_root : cfg::node
 	{
 	private:
 		/** We don't wanna include the sysinfo header here */
-		static bool has_rtm();
+		static bool enable_tsx_by_default();
 
 	public:
 		node_core(cfg::node* _this) : cfg::node(_this, "Core") {}
@@ -49,7 +49,7 @@ struct cfg_root : cfg::node
 		cfg::uint<0, 16> mfc_transfers_shuffling{ this, "MFC Commands Shuffling Limit", 0 };
 		cfg::uint<0, 10000> mfc_transfers_timeout{ this, "MFC Commands Timeout", 0, true };
 		cfg::_bool mfc_shuffling_in_steps{ this, "MFC Commands Shuffling In Steps", false, true };
-		cfg::_enum<tsx_usage> enable_TSX{ this, "Enable TSX", has_rtm() ? tsx_usage::enabled : tsx_usage::disabled }; // Enable TSX. Forcing this on Haswell/Broadwell CPUs should be used carefully
+		cfg::_enum<tsx_usage> enable_TSX{ this, "Enable TSX", enable_tsx_by_default() ? tsx_usage::enabled : tsx_usage::disabled }; // Enable TSX. Forcing this on Haswell/Broadwell CPUs should be used carefully
 		cfg::_bool spu_accurate_xfloat{ this, "Accurate xfloat", false };
 		cfg::_bool spu_approx_xfloat{ this, "Approximate xfloat", true };
 		cfg::_bool llvm_accurate_dfma{ this, "LLVM Accurate DFMA", true }; // Enable accurate double-precision FMA for CPUs which do not support it natively
@@ -142,6 +142,7 @@ struct cfg_root : cfg::node
 		cfg::_int<0, 30000000> driver_recovery_timeout{ this, "Driver Recovery Timeout", 1000000, true };
 		cfg::_int<0, 16667> driver_wakeup_delay{ this, "Driver Wake-Up Delay", 1, true };
 		cfg::_int<1, 1800> vblank_rate{ this, "Vblank Rate", 60, true }; // Changing this from 60 may affect game speed in unexpected ways
+		cfg::_bool vblank_ntsc{ this, "Vblank NTSC Fixup", false, true };
 		cfg::_bool decr_memory_layout{ this, "DECR memory layout", false}; // Force enable increased allowed main memory range as DECR console
 
 		struct node_vk : cfg::node
@@ -212,23 +213,14 @@ struct cfg_root : cfg::node
 	{
 		node_audio(cfg::node* _this) : cfg::node(_this, "Audio") {}
 
-		cfg::_enum<audio_renderer> renderer{ this, "Renderer",
-#ifdef _WIN32
-			audio_renderer::xaudio, true };
-#elif HAVE_FAUDIO
-			audio_renderer::faudio, true };
-#else
-			audio_renderer::openal, true };
-#endif
-
+		cfg::_enum<audio_renderer> renderer{ this, "Renderer", audio_renderer::cubeb, true };
+		cfg::_enum<audio_provider> provider{ this, "Audio provider", audio_provider::cell_audio, false };
 		cfg::_bool dump_to_file{ this, "Dump to file" };
-		cfg::_bool convert_to_u16{ this, "Convert to 16 bit", false, true };
+		cfg::_bool convert_to_s16{ this, "Convert to 16 bit", false, true };
 		cfg::_enum<audio_downmix> audio_channel_downmix{ this, "Audio Channels", audio_downmix::downmix_to_stereo, true };
-		cfg::_int<1, 128> start_threshold{ this, "Start Threshold", 1, true }; // TODO: used only by ALSA, should probably be removed once ALSA is upgraded
 		cfg::_int<0, 200> volume{ this, "Master Volume", 100, true };
 		cfg::_bool enable_buffering{ this, "Enable Buffering", true, true };
 		cfg::_int <4, 250> desired_buffer_duration{ this, "Desired Audio Buffer Duration", 100, true };
-		cfg::_int<1, 1000> sampling_period_multiplier{ this, "Sampling Period Multiplier", 100, true };
 		cfg::_bool enable_time_stretching{ this, "Enable Time Stretching", false, true };
 		cfg::_int<0, 100> time_stretching_threshold{ this, "Time Stretching Threshold", 75, true };
 		cfg::_enum<microphone_handler> microphone_type{ this, "Microphone Type", microphone_handler::null };
@@ -274,6 +266,16 @@ struct cfg_root : cfg::node
 
 		cfg::_enum<np_psn_status> psn_status{this, "PSN status", np_psn_status::disabled};
 	} net{this};
+
+	struct node_savestate : cfg::node
+	{
+		node_savestate(cfg::node* _this) : cfg::node(_this, "Savestate") {}
+
+		cfg::_bool start_paused{ this, "Start Paused" }; // Pause on first frame
+		cfg::_bool suspend_emu{ this, "Suspend Emulation Savestate Mode", false }; // Close emulation when saving, delete save after loading
+		cfg::_bool state_inspection_mode{ this, "Inspection Mode Savestates" }; // Save memory stored in executable files, thus allowing to view state without any files (for debugging)
+		cfg::_bool save_disc_game_data{ this, "Save Disc Game Data", false };
+	} savestate{this};
 
 	struct node_misc : cfg::node
 	{

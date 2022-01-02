@@ -131,6 +131,34 @@ static const char* get_camera_attr_name(s32 value)
 	return nullptr;
 }
 
+camera_context::camera_context(utils::serial& ar)
+{
+	save(ar);
+}
+
+void camera_context::save(utils::serial& ar)
+{
+	ar(init);
+
+	if (!init)
+	{
+		return;
+	}
+
+	if (ar.is_writing())
+	{
+		USING_SERIALIZATION_VERSION(cellCamera);
+	}
+
+	ar(notify_data_map, start_timestamp, read_mode, is_streaming, is_attached, is_open, info, attr, frame_num);
+}
+
+template <>
+void fxo_serialize<named_thread<camera_context>>(utils::serial* ar)
+{
+	fxo_serialize_body<named_thread<camera_context>>(ar);
+}
+
 static bool check_dev_num(s32 dev_num)
 {
 	return dev_num == 0;
@@ -433,6 +461,15 @@ error_code cellCameraInit()
 		g_camera.attr[CELL_CAMERA_AGCHIGH] = { 64 };
 		break;
 	}
+
+	case fake_camera_type::uvc1_1:
+	{
+		g_camera.attr[CELL_CAMERA_DEVICEID] = { 0x5ca, 0x18d0 }; // KBCR-S01MU
+		g_camera.attr[CELL_CAMERA_FORMATCAP] = { CELL_CAMERA_JPG | CELL_CAMERA_YUV422 };
+		g_camera.attr[CELL_CAMERA_NUMFRAME] = { 1 }; // Amount of supported resolutions
+		break;
+	}
+
 	default:
 		cellCamera.todo("Trying to init cellCamera with un-researched camera type.");
 	}

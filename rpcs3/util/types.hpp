@@ -131,6 +131,12 @@ namespace stx
 {
 	template <typename T, bool Se, usz Align>
 	class se_t;
+
+	template <typename T>
+	struct lazy;
+
+	template <typename T>
+	struct generator;
 }
 
 using stx::se_t;
@@ -799,13 +805,13 @@ struct const_str_t<umax>
 {
 	const usz size;
 
-	const union
+	union
 	{
 		const char8_t* chars;
 		const char* chars2;
 	};
 
-	const_str_t()
+	constexpr const_str_t()
 		: size(0)
 		, chars(nullptr)
 	{
@@ -825,7 +831,7 @@ struct const_str_t<umax>
 	{
 	}
 
-	operator const char*() const
+	constexpr operator const char*() const
 	{
 		return std::launder(chars2);
 	}
@@ -1078,6 +1084,21 @@ constexpr bool is_same_ptr(const volatile Y* ptr)
 template <typename X, typename Y>
 concept PtrSame = (is_same_ptr<X, Y>());
 
+namespace stx
+{
+	template <typename T>
+	struct exact_t
+	{
+		T obj;
+
+		exact_t(T&& _obj) : obj(std::forward<T>(_obj)) {}
+
+		// TODO: More conversions
+		template <typename U> requires (std::is_same_v<U&, T>)
+		operator U&() const { return obj; };
+	};
+}
+
 namespace utils
 {
 	struct serial;
@@ -1085,3 +1106,18 @@ namespace utils
 
 template <typename T>
 extern bool serialize(utils::serial& ar, T& obj);
+
+template <typename T>
+extern void fxo_serialize(utils::serial* ar);
+
+#define USING_SERIALIZATION_VERSION(name) []()\
+{\
+	extern void using_##name##_serialization();\
+	using_##name##_serialization();\
+}()
+
+#define GET_SERIALIZATION_VERSION(name) []()\
+{\
+	extern u32 get_##name##_serialization_version();\
+	return get_##name##_serialization_version();\
+}()

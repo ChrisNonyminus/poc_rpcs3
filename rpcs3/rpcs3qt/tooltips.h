@@ -41,13 +41,13 @@ public:
 
 		// audio
 
-		const QString audio_out                 = tr("XAudio2 is the recommended option and should be used whenever possible.\nOpenAL uses a cross-platform approach and is the next best alternative.");
-		const QString audio_out_linux           = tr("OpenAL uses a cross-platform approach and supports audio buffering, so it is the recommended option.\nPulseAudio uses the native Linux sound system, and is the next best alternative. If neither are available, ALSA can be used instead.");
+		const QString audio_out                 = tr("Cubeb uses a cross-platform approach and supports audio buffering, so it is the recommended option.\nXAudio2 uses native Windows sounds system, is the next best alternative.");
+		const QString audio_out_linux           = tr("Cubeb uses a cross-platform approach and supports audio buffering, so it is the recommended option.\nIf it's not availiable, FAudio could be used instead.");
 		const QString audio_dump                = tr("Saves all audio as a raw wave file. If unsure, leave this unchecked.");
 		const QString convert                   = tr("Uses 16-bit audio samples instead of default 32-bit floating point.\nUse with buggy audio drivers if you have no sound or completely broken sound.");
 		const QString downmix                   = tr("Uses chosen audio output instead of default 7.1 surround sound.\nUse downmix to stereo with stereo audio devices. Use 5.1 or higher only if you are using a surround sound audio system.");
 		const QString master_volume             = tr("Controls the overall volume of the emulation.\nValues above 100% might reduce the audio quality.");
-		const QString enable_buffering          = tr("Enables audio buffering, which reduces crackle/stutter but increases audio latency (requires XAudio2 or OpenAL).");
+		const QString enable_buffering          = tr("Enables audio buffering, which reduces crackle/stutter but increases audio latency.");
 		const QString audio_buffer_duration     = tr("Target buffer duration in milliseconds.\nHigher values make the buffering algorithm's job easier, but may introduce noticeable audio latency.");
 		const QString enable_time_stretching    = tr("Enables time stretching - requires buffering to be enabled.\nReduces crackle/stutter further, but may cause a very noticeable reduction in audio quality on slower CPUs.");
 		const QString time_stretching_threshold = tr("Buffer fill level (in percentage) below which time stretching will start.");
@@ -66,7 +66,7 @@ public:
 		const QString accurate_xfloat           = tr("Adds extra accuracy to SPU float vectors processing.\nFixes bugs in various games at the cost of performance.\nThis setting is only applied when SPU Decoder is set to Fast or LLVM.");
 		const QString enable_thread_scheduler   = tr("Control how RPCS3 utilizes the threads of your system.\nEach option heavily depends on the game and on your CPU. It's recommended to try each option to find out which performs the best.\nChanging the thread scheduler is not supported on CPUs with less than 12 threads.");
 		const QString spu_loop_detection        = tr("Try to detect loop conditions in SPU kernels and use them as scheduling hints.\nImproves performance and reduces CPU usage.\nMay cause severe audio stuttering in rare cases.");
-		const QString enable_tsx                = tr("Enable usage of TSX instructions.\nNeeds to be forced on some Haswell or Broadwell CPUs.\nForcing this on older Hardware can lead to system instability, use it with caution.");
+		const QString enable_tsx                = tr("Enable usage of TSX instructions.\nNeeds to be forced on some Haswell or Broadwell CPUs or CPUs with the TSX-FA instruction set.\nForcing TSX in these cases may lead to system and performance instability, use it with caution.");
 		const QString spu_block_size            = tr("This option controls the SPU analyser, particularly the size of compiled units. The Mega and Giga modes may improve performance by tying smaller units together, decreasing the number of compiled units but increasing their size.\nUse the Safe mode for maximum compatibility.");
 		const QString preferred_spu_threads     = tr("Some SPU stages are sensitive to race conditions and allowing a limited number at a time helps alleviate performance stalls.\nSetting this to a smaller value might improve performance and reduce stuttering in some games.\nLeave this on auto if performance is negatively affected when setting a small value.");
 		const QString full_width_avx512         = tr("Enables the use of code with full width AVX-512.\nThis code can be executed much faster, but may cause a loss in performance if your CPU model experiences downclocking on wide AVX-512 loads.\nNote that AVX-512 instructions will be used regardless of this option, just at 128 and 256 bit width.");

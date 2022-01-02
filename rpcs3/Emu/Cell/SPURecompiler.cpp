@@ -4485,13 +4485,13 @@ public:
 				elements = 16;
 				dwords = 8;
 			}
-			else if (true)
+			else if (m_use_avx)
 			{
 				stride = 32;
 				elements = 8;
 				dwords = 4;
 			}
-			else // TODO: Use this path when the cpu doesn't support AVX
+			else
 			{
 				stride = 16;
 				elements = 4;
@@ -4539,7 +4539,7 @@ public:
 				{
 					vls = m_ir->CreateAlignedLoad(_ptr<u32[16]>(data_addr, j - starta), llvm::MaybeAlign{4});
 				}
-				else if (true)
+				else if (m_use_avx)
 				{
 					vls = m_ir->CreateAlignedLoad(_ptr<u32[8]>(data_addr, j - starta), llvm::MaybeAlign{4});
 				}
@@ -4573,7 +4573,7 @@ public:
 			{
 				acc = m_ir->CreateBitCast(acc, get_type<u64[8]>());
 			}
-			else if (true)
+			else if (m_use_avx)
 			{
 				acc = m_ir->CreateBitCast(acc, get_type<u64[4]>());
 			}
@@ -5506,11 +5506,7 @@ public:
 			spu_runtime::g_escape(_spu);
 		}
 
-		if (_spu->test_stopped())
-		{
-			_spu->pc += 4;
-			spu_runtime::g_escape(_spu);
-		}
+		static_cast<void>(_spu->test_stopped());
 	}
 
 	void STOP(spu_opcode_t op) //
@@ -5553,12 +5549,7 @@ public:
 			spu_runtime::g_escape(_spu);
 		}
 
-		if (_spu->test_stopped())
-		{
-			_spu->pc += 4;
-			spu_runtime::g_escape(_spu);
-		}
-
+		static_cast<void>(_spu->test_stopped());
 		return static_cast<u32>(result & 0xffffffff);
 	}
 
@@ -5576,12 +5567,7 @@ public:
 		{
 			_spu->state += cpu_flag::wait;
 			std::this_thread::yield();
-
-			if (_spu->test_stopped())
-			{
-				_spu->pc += 4;
-				spu_runtime::g_escape(_spu);
-			}
+			static_cast<void>(_spu->test_stopped());
 		}
 
 		return res;
@@ -5600,7 +5586,7 @@ public:
 
 		if (atomic)
 		{
-			const auto val = m_ir->CreateAtomicRMW(llvm::AtomicRMWInst::Xchg, ptr, m_ir->getInt64(0), llvm::AtomicOrdering::Acquire);
+			const auto val = m_ir->CreateAtomicRMW(llvm::AtomicRMWInst::Xchg, ptr, m_ir->getInt64(0), llvm::MaybeAlign{8}, llvm::AtomicOrdering::Acquire);
 			val0 = val;
 		}
 		else
@@ -5617,6 +5603,8 @@ public:
 		val0 = m_ir->CreateTrunc(val0, get_type<u32>());
 		m_ir->CreateCondBr(cond, done, wait);
 		m_ir->SetInsertPoint(wait);
+		update_pc();
+		m_block->store.fill(nullptr);
 		const auto val1 = call("spu_read_channel", &exec_rdch, m_thread, m_ir->getInt32(op.ra));
 		m_ir->CreateBr(done);
 		m_ir->SetInsertPoint(done);
@@ -5647,6 +5635,7 @@ public:
 		case SPU_RdInMbox:
 		{
 			update_pc();
+			m_block->store.fill(nullptr);
 			res.value = call("spu_read_in_mbox", &exec_read_in_mbox, m_thread);
 			break;
 		}
@@ -5693,6 +5682,7 @@ public:
 		case SPU_RdEventStat:
 		{
 			update_pc();
+			m_block->store.fill(nullptr);
 			res.value = call("spu_read_events", &exec_read_events, m_thread);
 			break;
 		}
@@ -5706,6 +5696,7 @@ public:
 		default:
 		{
 			update_pc();
+			m_block->store.fill(nullptr);
 			res.value = call("spu_read_channel", &exec_rdch, m_thread, m_ir->getInt32(op.ra));
 			break;
 		}
@@ -5916,6 +5907,7 @@ public:
 			m_ir->CreateCondBr(m_ir->CreateICmpNE(m_ir->CreateLoad(spu_ptr<u32>(&spu_thread::ch_tag_upd)), m_ir->getInt32(MFC_TAG_UPDATE_IMMEDIATE)), _mfc, next);
 			m_ir->SetInsertPoint(_mfc);
 			update_pc();
+			m_block->store.fill(nullptr);
 			call("spu_write_channel", &exec_wrch, m_thread, m_ir->getInt32(op.ra), val.value);
 			m_ir->CreateBr(next);
 			m_ir->SetInsertPoint(next);
@@ -6068,6 +6060,7 @@ public:
 					m_ir->SetInsertPoint(next);
 					m_ir->CreateStore(ci, spu_ptr<u8>(&spu_thread::ch_mfc_cmd, &spu_mfc_cmd::cmd));
 					update_pc();
+					m_block->store.fill(nullptr);
 					call("spu_exec_mfc_cmd", &exec_mfc_cmd, m_thread);
 					return;
 				}
@@ -6312,6 +6305,7 @@ public:
 			m_ir->CreateCondBr(m_ir->CreateICmpNE(_old, _new), _mfc, next);
 			m_ir->SetInsertPoint(_mfc);
 			update_pc();
+			m_block->store.fill(nullptr);
 			call("spu_list_unstall", &exec_list_unstall, m_thread, eval(val & 0x1f).value);
 			m_ir->CreateBr(next);
 			m_ir->SetInsertPoint(next);
@@ -6334,6 +6328,7 @@ public:
 		}
 
 		update_pc();
+		m_block->store.fill(nullptr);
 		call("spu_write_channel", &exec_wrch, m_thread, m_ir->getInt32(op.ra), val.value);
 	}
 
@@ -6354,6 +6349,7 @@ public:
 		{
 			m_block->block_end = m_ir->GetInsertBlock();
 			update_pc(m_pos + 4);
+			m_block->store.fill(nullptr);
 			tail_chunk(m_dispatch);
 		}
 	}
@@ -6889,12 +6885,23 @@ public:
 		set_vr(op.rt, pshufb(a, sh));
 	}
 
+	template <typename T>
+	static llvm_calli<u32[4], T> orx(T&& a)
+	{
+		return {"spu_orx", {std::forward<T>(a)}};
+	}
+
 	void ORX(spu_opcode_t op)
 	{
-		const auto a = get_vr(op.ra);
-		const auto x = zshuffle(a, 2, 3, 0, 1) | a;
-		const auto y = zshuffle(x, 1, 0, 3, 2) | x;
-		set_vr(op.rt, zshuffle(y, 4, 4, 4, 3));
+		register_intrinsic("spu_orx", [&](llvm::CallInst* ci)
+		{
+			const auto a = value<u32[4]>(ci->getOperand(0));
+			const auto x = zshuffle(a, 2, 3, 0, 1) | a;
+			const auto y = zshuffle(x, 1, 0, 3, 2) | x;
+			return zshuffle(y, 4, 4, 4, 3);
+		});
+
+		set_vr(op.rt, orx(get_vr(op.ra)));
 	}
 
 	void CBD(spu_opcode_t op)
@@ -7649,7 +7656,7 @@ public:
 						return;
 					}
 
-					const auto m = gf2p8affineqb(c, build<u8[16]>(0x40, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x40, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20), 0x7f);
+					const auto m = gf2p8affineqb(c, build<u8[16]>(0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x40, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x40), 0x7f);
 					const auto mm = select(noncast<s8[16]>(m) >= 0, splat<u8[16]>(0), m);
 					const auto ab = vperm2b256to128(as, bs, c);
 					set_vr(op.rt4, select(noncast<s8[16]>(c) >= 0, ab, mm));
@@ -7711,7 +7718,7 @@ public:
 				return;
 			}
 
-			const auto m = gf2p8affineqb(c, build<u8[16]>(0x40, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x40, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20), 0x7f);
+			const auto m = gf2p8affineqb(c, build<u8[16]>(0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x40, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x40), 0x7f);
 			const auto mm = select(noncast<s8[16]>(m) >= 0, splat<u8[16]>(0), m);
 			const auto cr = eval(~c);
 			const auto ab = vperm2b256to128(b, a, cr);
@@ -9005,7 +9012,9 @@ public:
 		if (m_interp_magn)
 			m_ir->CreateStore(&*(m_function->arg_begin() + 2), spu_ptr<u32>(&spu_thread::pc))->setVolatile(true);
 		else
-			update_pc();
+		{
+			update_pc(), m_block->store.fill(nullptr);
+		}
 		const auto ptr = _ptr<u32>(m_memptr, 0xffdead00);
 		m_ir->CreateStore(m_ir->getInt32("HALT"_u32), ptr)->setVolatile(true);
 		m_ir->CreateBr(next);
@@ -9234,7 +9243,7 @@ public:
 
 		const auto rt = get_vr<u8[16]>(op.rt);
 
-		// Checking for zero doeesn't care about the order of the bytes,
+		// Checking for zero doesn't care about the order of the bytes,
 		// so load the data before it's byteswapped
 		if (auto [ok, as] = match_expr(rt, byteswap(match<u8[16]>())); ok)
 		{
@@ -9245,6 +9254,22 @@ public:
 			m_ir->CreateCondBr(cond.value, target, add_block_next());
 			return;
 		}
+
+		const auto ox = get_vr<u32[4]>(op.rt);
+
+		// Instead of extracting the value generated by orx, just test the input to orx with ptest
+		if (auto [ok, as] = match_expr(ox, orx(match<u32[4]>())); ok)
+		{
+			m_block->block_end = m_ir->GetInsertBlock();
+			const auto a = extract(bitcast<u64[2]>(as), 0);
+			const auto b = extract(bitcast<u64[2]>(as), 1);
+			const auto cond = eval((a | b) == 0);
+			const auto addr = eval(extract(get_vr(op.ra), 3) & 0x3fffc);
+			const auto target = add_block_indirect(op, addr);
+			m_ir->CreateCondBr(cond.value, target, add_block_next());
+			return;
+		}
+
 
 		// Check sign bit instead (optimization)
 		if (match_vr<s32[4], s64[2]>(op.rt, [&](auto c, auto MP)
@@ -9279,12 +9304,27 @@ public:
 
 		const auto rt = get_vr<u8[16]>(op.rt);
 
-		// Checking for zero doeesn't care about the order of the bytes,
+		// Checking for zero doesn't care about the order of the bytes,
 		// so load the data before it's byteswapped
 		if (auto [ok, as] = match_expr(rt, byteswap(match<u8[16]>())); ok)
 		{
 			m_block->block_end = m_ir->GetInsertBlock();
 			const auto cond = eval(extract(bitcast<u32[4]>(as), 0) != 0);
+			const auto addr = eval(extract(get_vr(op.ra), 3) & 0x3fffc);
+			const auto target = add_block_indirect(op, addr);
+			m_ir->CreateCondBr(cond.value, target, add_block_next());
+			return;
+		}
+
+		const auto ox = get_vr<u32[4]>(op.rt);
+
+		// Instead of extracting the value generated by orx, just test the input to orx with ptest
+		if (auto [ok, as] = match_expr(ox, orx(match<u32[4]>())); ok)
+		{
+			m_block->block_end = m_ir->GetInsertBlock();
+			const auto a = extract(bitcast<u64[2]>(as), 0);
+			const auto b = extract(bitcast<u64[2]>(as), 1);
+			const auto cond = eval((a | b) != 0);
 			const auto addr = eval(extract(get_vr(op.ra), 3) & 0x3fffc);
 			const auto target = add_block_indirect(op, addr);
 			m_ir->CreateCondBr(cond.value, target, add_block_next());
@@ -9514,7 +9554,7 @@ public:
 
 		const auto rt = get_vr<u8[16]>(op.rt);
 
-		// Checking for zero doeesn't care about the order of the bytes,
+		// Checking for zero doesn't care about the order of the bytes,
 		// so load the data before it's byteswapped
 		if (auto [ok, as] = match_expr(rt, byteswap(match<u8[16]>())); ok)
 		{
@@ -9526,6 +9566,23 @@ public:
 				return;
 			}
 		}
+
+		const auto ox = get_vr<u32[4]>(op.rt);
+
+		// Instead of extracting the value generated by orx, just test the input to orx with ptest
+		if (auto [ok, as] = match_expr(ox, orx(match<u32[4]>())); ok)
+		{
+			if (target != m_pos + 4)
+			{
+				m_block->block_end = m_ir->GetInsertBlock();
+				const auto a = extract(bitcast<u64[2]>(as), 0);
+				const auto b = extract(bitcast<u64[2]>(as), 1);
+				const auto cond = eval((a | b) == 0);
+				m_ir->CreateCondBr(cond.value, add_block(target), add_block(m_pos + 4));
+				return;
+			}
+		}
+
 
 		// Check sign bit instead (optimization)
 		if (match_vr<s32[4], s64[2]>(op.rt, [&](auto c, auto MP)
@@ -9573,7 +9630,7 @@ public:
 
 		const auto rt = get_vr<u8[16]>(op.rt);
 
-		// Checking for zero doeesn't care about the order of the bytes,
+		// Checking for zero doesn't care about the order of the bytes,
 		// so load the data before it's byteswapped
 		if (auto [ok, as] = match_expr(rt, byteswap(match<u8[16]>())); ok)
 		{
@@ -9581,6 +9638,22 @@ public:
 			{
 				m_block->block_end = m_ir->GetInsertBlock();
 				const auto cond = eval(extract(bitcast<u32[4]>(as), 0) != 0);
+				m_ir->CreateCondBr(cond.value, add_block(target), add_block(m_pos + 4));
+				return;
+			}
+		}
+
+		const auto ox = get_vr<u32[4]>(op.rt);
+
+		// Instead of extracting the value generated by orx, just test the input to orx with ptest
+		if (auto [ok, as] = match_expr(ox, orx(match<u32[4]>())); ok)
+		{
+			if (target != m_pos + 4)
+			{
+				m_block->block_end = m_ir->GetInsertBlock();
+				const auto a = extract(bitcast<u64[2]>(as), 0);
+				const auto b = extract(bitcast<u64[2]>(as), 1);
+				const auto cond = eval((a | b) != 0);
 				m_ir->CreateCondBr(cond.value, add_block(target), add_block(m_pos + 4));
 				return;
 			}

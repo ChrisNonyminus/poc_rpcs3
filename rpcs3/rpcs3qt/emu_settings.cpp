@@ -72,11 +72,6 @@ bool emu_settings::Init()
 {
 	m_render_creator = new render_creator(this);
 
-	if (!m_render_creator)
-	{
-		fmt::throw_exception("emu_settings::emu_settings() render_creator is null");
-	}
-
 	if (m_render_creator->abort_requested)
 	{
 		return false;
@@ -206,6 +201,12 @@ bool emu_settings::ValidateSettings(bool cleanup)
 
 			if (cfg_node)
 			{
+				// Ignore every node in Log subsection
+				if (level == 0 && cfg_node->get_name() == "Log")
+				{
+					continue;
+				}
+
 				YAML::Node next_node = yml_node[key];
 				search_level(next_level, next_node, keys, cfg_node);
 			}
@@ -350,7 +351,10 @@ void emu_settings::EnhanceComboBox(QComboBox* combobox, emu_settings_type type, 
 		for (int i = 0; i < combobox->count(); i++)
 		{
 			const QVariantList var_list = combobox->itemData(i).toList();
-			ensure(var_list.size() == 2 && var_list[0].canConvert<QString>());
+			if (var_list.size() != 2 || !var_list[0].canConvert<QString>())
+			{
+				fmt::throw_exception("Invalid data found in combobox entry %d (text='%s', listsize=%d, itemcount=%d)", i, sstr(combobox->itemText(i)), var_list.size(), combobox->count());
+			}
 
 			if (value == var_list[0].toString())
 			{
@@ -394,6 +398,8 @@ void emu_settings::EnhanceComboBox(QComboBox* combobox, emu_settings_type type, 
 
 	connect(combobox, QOverload<int>::of(&QComboBox::currentIndexChanged), combobox, [this, is_ranged, combobox, type](int index)
 	{
+		if (index < 0) return;
+
 		if (is_ranged)
 		{
 			SetSetting(type, sstr(combobox->itemData(index)));
@@ -401,7 +407,10 @@ void emu_settings::EnhanceComboBox(QComboBox* combobox, emu_settings_type type, 
 		else
 		{
 			const QVariantList var_list = combobox->itemData(index).toList();
-			ensure(var_list.size() == 2 && var_list[0].canConvert<QString>());
+			if (var_list.size() != 2 || !var_list[0].canConvert<QString>())
+			{
+				fmt::throw_exception("Invalid data found in combobox entry %d (text='%s', listsize=%d, itemcount=%d)", index, sstr(combobox->itemText(index)), var_list.size(), combobox->count());
+			}
 			SetSetting(type, sstr(var_list[0]));
 		}
 	});
@@ -962,13 +971,7 @@ QString emu_settings::GetLocalizedSetting(const QString& original, emu_settings_
 #ifdef _WIN32
 		case audio_renderer::xaudio: return tr("XAudio2", "Audio renderer");
 #endif
-#ifdef HAVE_ALSA
-		case audio_renderer::alsa: return tr("ALSA", "Audio renderer");
-#endif
-#ifdef HAVE_PULSE
-		case audio_renderer::pulse: return tr("PulseAudio", "Audio renderer");
-#endif
-		case audio_renderer::openal: return tr("OpenAL", "Audio renderer");
+		case audio_renderer::cubeb: return tr("Cubeb", "Audio renderer");
 #ifdef HAVE_FAUDIO
 		case audio_renderer::faudio: return tr("FAudio", "Audio renderer");
 #endif

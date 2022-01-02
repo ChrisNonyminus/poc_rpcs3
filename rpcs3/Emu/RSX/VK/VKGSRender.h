@@ -384,6 +384,7 @@ private:
 
 	std::unique_ptr<vk::text_writer> m_text_writer;
 	std::unique_ptr<vk::upscaler> m_upscaler;
+	bool m_use_fsr_upscaling{false};
 
 	std::unique_ptr<vk::buffer> m_cond_render_buffer;
 	u64 m_cond_render_sync_tag = 0;
@@ -502,8 +503,11 @@ private:
 
 public:
 	u64 get_cycles() final;
-	VKGSRender();
 	~VKGSRender() override;
+
+	VKGSRender(utils::serial* ar) noexcept;
+	VKGSRender(utils::serial& ar) noexcept : VKGSRender(std::addressof(ar)) {}
+	VKGSRender() noexcept : VKGSRender(nullptr) {}
 
 private:
 	void prepare_rtts(rsx::framebuffer_creation_context context);

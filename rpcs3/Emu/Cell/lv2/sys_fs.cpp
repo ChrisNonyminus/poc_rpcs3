@@ -10,6 +10,8 @@
 #include "Emu/IdManager.h"
 #include "Utilities/StrUtil.h"
 
+#include <span>
+
 LOG_CHANNEL(sys_fs);
 
 lv2_fs_mount_point g_mp_sys_dev_root;
@@ -51,16 +53,15 @@ void fmt_class_string<lv2_file>::format(std::string& out, u64 arg)
 			return "N/A";
 		}
 
-		std::string size_str = fmt::format("0x%05x ", size);
+		std::string size_str;
 		switch (std::bit_width(size) / 10 * 10)
 		{
-		case 64: size_str = "0"s; break;
-		case 0: fmt::append(size_str, "(%u)", size); break;
-		case 10: fmt::append(size_str, "(%gKB)", size / 1024.); break;
-		case 20: fmt::append(size_str, "(%gMB)", size / (1024. * 1024)); break;
+		case 0: fmt::append(size_str, "%u", size); break;
+		case 10: fmt::append(size_str, "%gKB", size / 1024.); break;
+		case 20: fmt::append(size_str, "%gMB", size / (1024. * 1024)); break;
 
 		default:
-		case 30: fmt::append(size_str, "(%gGB)", size / (1024. * 1024 * 1024)); break;
+		case 30: fmt::append(size_str, "%gGB", size / (1024. * 1024 * 1024)); break;
 		}
 	
 		return size_str;
@@ -69,7 +70,7 @@ void fmt_class_string<lv2_file>::format(std::string& out, u64 arg)
 	const usz pos = file.file ? file.file.pos() : umax;
 	const usz size = file.file ? file.file.size() : umax;
 
-	fmt::append(out, u8"%s, “%s”, Mode: 0x%x, Flags: 0x%x, Pos: %s, Size: %s", file.type, file.name.data(), file.mode, file.flags, get_size(pos), get_size(size));
+	fmt::append(out, u8"%s, “%s”, Mode: 0x%x, Flags: 0x%x, Pos/Size: %s/%s (0x%x/0x%x)", file.type, file.name.data(), file.mode, file.flags, get_size(pos), get_size(size), pos, size);
 }
 
 template<>
@@ -192,6 +193,12 @@ lv2_fs_mount_point* lv2_fs_object::get_mp(std::string_view filename)
 	return &g_mp_sys_dev_root;
 }
 
+lv2_fs_object::lv2_fs_object(utils::serial& ar)
+	: name(ar)
+	, mp(get_mp(name.data()))
+{
+}
+
 u64 lv2_file::op_read(const fs::file& file, vm::ptr<void> buf, u64 size)
 {
 	// Copy data from intermediate buffer (avoid passing vm pointer to a native API)
@@ -237,6 +244,143 @@ u64 lv2_file::op_write(const fs::file& file, vm::cptr<void> buf, u64 size)
 	}
 
 	return result;
+}
+
+template <>
+void fxo_serialize<loaded_npdrm_keys>(utils::serial* ar)
+{
+	fxo_serialize_body<loaded_npdrm_keys>(ar);
+	fxo_serialize_body<id_manager::id_map<lv2_fs_object>>(ar);
+}
+
+lv2_file::lv2_file(utils::serial& ar)
+	: lv2_fs_object(ar)
+	, mode(ar)
+	, flags(ar)
+	, type(ar)
+{
+	ar(lock);
+
+	be_t<u64> arg = 0;
+	u64 size = 0;
+
+	switch (type)
+	{
+	case lv2_file_type::regular: break;
+	case lv2_file_type::sdata: arg = 0x18000000010, size = 8; break; // TODO: Fix
+	case lv2_file_type::edata: arg = 0x2, size = 8; break;
+	}
+
+	const std::string retrieve_real = ar;
+
+	open_result_t res = lv2_file::open(retrieve_real, flags & CELL_FS_O_ACCMODE, mode, size ? &arg : nullptr, size);
+	file = std::move(res.file);
+	real_path = std::move(res.real_path);
+
+	g_fxo->get<loaded_npdrm_keys>().npdrm_fds.raw() += type != lv2_file_type::regular;
+
+	if (ar.operator bool()) // see lv2_file::save in_mem
+	{
+		std::vector<u8> buf = ar;
+		const fs::stat_t stat = ar;
+		file = fs::make_stream<std::vector<u8>>(std::move(buf), stat);
+	}
+
+	if (!file)
+	{
+		sys_fs.error("Failed to load %s for savestates", name.data());
+		ar.pos += sizeof(u64);
+		ensure(!!g_cfg.savestate.state_inspection_mode);
+		return;
+	}
+
+	file.seek(ar);
+}
+
+void lv2_file::save(utils::serial& ar)
+{
+	USING_SERIALIZATION_VERSION(lv2_fs);
+	ar(name, mode, flags, type, lock, vfs::retrieve(real_path));
+
+	if (!(mp->flags & lv2_mp_flag::read_only) && flags & CELL_FS_O_ACCMODE)
+	{
+		// Ensure accurate timestamps and content on disk
+		file.sync();
+	}
+
+	// UNIX allows deletion of files while descriptors are still opened
+	// descriptpors shall keep the data in memory in this case
+	const bool in_mem = [&]()
+	{
+		if (mp->flags & lv2_mp_flag::read_only)
+		{
+			return false;
+		}
+
+		fs::file test{real_path};
+
+		if (!test) return true;
+
+		return test.stat() != file.stat();
+	}();
+
+	ar(in_mem);
+
+	if (in_mem)
+	{
+		ar(file.to_vector<u8>());
+		ar(file.stat());
+	}
+
+	ar(file.pos());
+}
+
+lv2_dir::lv2_dir(utils::serial& ar)
+	: lv2_fs_object(ar)
+	, entries([&]
+	{
+		std::vector<fs::dir_entry> entries;
+
+		u64 size = 0;
+		ar.deserialize_vle(size);
+		entries.resize(size);
+
+		for (auto& entry : entries)
+		{
+			ar(entry.name, static_cast<fs::stat_t&>(entry));
+		}
+
+		return entries;
+	}())
+	, pos(ar)
+{
+}
+
+void lv2_dir::save(utils::serial& ar)
+{
+	USING_SERIALIZATION_VERSION(lv2_fs);
+
+	ar(name);
+
+	ar.serialize_vle(entries.size());
+
+	for (auto& entry : entries)
+	{
+		ar(entry.name, static_cast<const fs::stat_t&>(entry));
+	}
+
+	ar(pos);
+}
+
+loaded_npdrm_keys::loaded_npdrm_keys(utils::serial& ar)
+{
+	save(ar);
+}
+
+void loaded_npdrm_keys::save(utils::serial& ar)
+{
+	ar(dec_keys_pos);
+	ar(std::span(dec_keys, std::min<usz>(std::size(dec_keys), dec_keys_pos)));
 }
 
 struct lv2_file::file_view : fs::file_base
@@ -310,6 +454,43 @@ fs::file lv2_file::make_view(const std::shared_ptr<lv2_file>& _file, u64 offset)
 	fs::file result;
 	result.reset(std::make_unique<lv2_file::file_view>(_file, offset));
 	return result;
+}
+
+std::pair<CellError, std::string_view> translate_to_sv(vm::cptr<char> ptr)
+{
+	const u32 addr = ptr.addr();
+
+	if (!vm::check_addr(addr, vm::page_readable))
+	{
+		return {CELL_EFAULT, {}};
+	}
+
+	const usz remained_page_memory = (~addr % 4096) + 1;
+
+	constexpr usz max_length = CELL_FS_MAX_FS_PATH_LENGTH + 1;
+
+	const usz target_memory_span_size = std::min<usz>(max_length, vm::check_addr(addr + 4096, vm::page_readable) ? max_length : remained_page_memory);
+
+	std::string_view path{ptr.get_ptr(), target_memory_span_size};
+	path = path.substr(0, path.find_first_of('\0'));
+
+	if (path.size() == max_length)
+	{
+		return {CELL_ENAMETOOLONG, {}};
+	}
+
+	if (path.size() == target_memory_span_size)
+	{
+		// Null character lookup has ended whilst pointing at invalid memory
+		return {CELL_EFAULT, path};
+	}
+
+	if (!path.starts_with("/"sv))
+	{
+		return {CELL_ENOENT, path};
+	}
+
+	return {{}, path};
 }
 
 error_code sys_fs_test(ppu_thread&, u32 arg1, u32 arg2, vm::ptr<u32> arg3, u32 arg4, vm::ptr<char> buf, u32 buf_size)
@@ -516,13 +697,32 @@ lv2_file::open_raw_result_t lv2_file::open_raw(const std::string& local_path, s3
 			if (magic == "NPD\0"_u32)
 			{
 				auto& edatkeys = g_fxo->get<loaded_npdrm_keys>();
-				auto sdata_file = std::make_unique<EDATADecrypter>(std::move(file), edatkeys.devKlic.load(), edatkeys.rifKey.load());
-				if (!sdata_file->ReadHeader())
-				{
-					return {CELL_EFSSPECIFIC};
-				}
 
-				file.reset(std::move(sdata_file));
+				const u64 init_pos = edatkeys.dec_keys_pos;
+				const auto& dec_keys = edatkeys.dec_keys;
+				const u64 max_i = std::min<u64>(std::size(dec_keys), init_pos);
+
+				for (u64 i = 0;; i++)
+				{
+					if (i == max_i)
+					{
+						// Run out of keys to try
+						return {CELL_EFSSPECIFIC};
+					}
+
+					// Try all registered keys
+					auto edata_file = std::make_unique<EDATADecrypter>(std::move(file), dec_keys[(init_pos - i - 1) % std::size(dec_keys)].load());
+					if (!edata_file->ReadHeader())
+					{
+						// Prepare file for the next iteration
+						file = std::move(edata_file->edata_file);
+						continue;
+					}
+
+					file.reset(std::move(edata_file));
+					break;
+
+				}
 			}
 
 			break;
@@ -582,10 +782,14 @@ error_code sys_fs_open(ppu_thread& ppu, vm::cptr<char> path, s32 flags, vm::ptr<
 
 	sys_fs.warning("sys_fs_open(path=%s, flags=%#o, fd=*0x%x, mode=%#o, arg=*0x%x, size=0x%llx)", path, flags, fd, mode, arg, size);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	auto [error, ppath, real, file, type] = lv2_file::open(path.get_ptr(), flags, mode, arg.get_ptr(), size);
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
+
+	auto [error, ppath, real, file, type] = lv2_file::open(vpath, flags, mode, arg.get_ptr(), size);
 
 	if (error)
 	{
@@ -597,25 +801,19 @@ error_code sys_fs_open(ppu_thread& ppu, vm::cptr<char> path, s32 flags, vm::ptr<
 		return {error, path};
 	}
 
-	if (type >= lv2_file_type::sdata)
+	if (const u32 id = idm::import<lv2_fs_object, lv2_file>([&ppath = ppath, &file = file, mode, flags, &real = real, &type = type]() -> std::shared_ptr<lv2_file>
 	{
-		sys_fs.warning("sys_fs_open(): NPDRM detected");
+		std::shared_ptr<lv2_file> result;
 
-		if (const u32 id = idm::import<lv2_fs_object, lv2_file>([&ppath = ppath, &file = file, mode, flags, &real = real, &type = type]() -> std::shared_ptr<lv2_file>
+		if (type >= lv2_file_type::sdata && !g_fxo->get<loaded_npdrm_keys>().npdrm_fds.try_inc(16))
 		{
-			if (!g_fxo->get<loaded_npdrm_keys>().npdrm_fds.try_inc(16))
-			{
-				return nullptr;
-			}
-
-			return std::make_shared<lv2_file>(ppath, std::move(file), mode, flags, real, type);
-		}))
-		{
-			*fd = id;
-			return CELL_OK;
+			return result;
 		}
-	}
-	else if (const u32 id = idm::make<lv2_fs_object, lv2_file>(ppath, std::move(file), mode, flags, real))
+
+		result = std::make_shared<lv2_file>(ppath, std::move(file), mode, flags, real, type);
+		sys_fs.warning("sys_fs_open(): fd=%u, %s", idm::last_id(), *result);
+		return result;
+	}))
 	{
 		*fd = id;
 		return CELL_OK;
@@ -677,7 +875,15 @@ error_code sys_fs_read(ppu_thread& ppu, u32 fd, vm::ptr<void> buf, u64 nbytes, v
 		return CELL_EIO;
 	}
 
-	*nread = file->op_read(buf, nbytes);
+	const u64 read_bytes = file->op_read(buf, nbytes);
+
+	*nread = read_bytes;
+
+	if (!read_bytes && file->file.pos() < file->file.size())
+	{
+		// EDATA corruption perhaps
+		return CELL_EFSSPECIFIC;
+	}
 
 	return CELL_OK;
 }
@@ -812,7 +1018,7 @@ error_code sys_fs_close(ppu_thread& ppu, u32 fd)
 		return {CELL_EBADF, fd};
 	}
 
-	sys_fs.warning("sys_fs_close(fd=%u): path='%s'", fd, file->name.data());
+	sys_fs.warning("sys_fs_close(fd=%u): %s", fd, *file);
 
 	if (file->lock == 1)
 	{
@@ -829,15 +1035,15 @@ error_code sys_fs_opendir(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<u32> fd)
 
 	sys_fs.warning("sys_fs_opendir(path=%s, fd=*0x%x)", path, fd);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
 	std::string processed_path;
 	std::vector<std::string> ext;
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath, &ext, &processed_path);
 
 	processed_path += "/";
@@ -998,13 +1204,13 @@ error_code sys_fs_stat(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<CellFsStat>
 
 	sys_fs.warning("sys_fs_stat(path=%s, sb=*0x%x)", path, sb);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath);
 
 	const auto mp = lv2_fs_object::get_mp(vpath);
@@ -1148,13 +1354,13 @@ error_code sys_fs_mkdir(ppu_thread& ppu, vm::cptr<char> path, s32 mode)
 
 	sys_fs.warning("sys_fs_mkdir(path=%s, mode=%#o)", path, mode);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath);
 
 	const auto mp = lv2_fs_object::get_mp(vpath);
@@ -1199,10 +1405,21 @@ error_code sys_fs_rename(ppu_thread& ppu, vm::cptr<char> from, vm::cptr<char> to
 
 	sys_fs.warning("sys_fs_rename(from=%s, to=%s)", from, to);
 
-	const std::string_view vfrom = from.get_ptr();
-	const std::string local_from = vfs::get(vfrom);
+	const auto [from_error, vfrom] = translate_to_sv(from);
 
-	const std::string_view vto = to.get_ptr();
+	if (from_error)
+	{
+		return {from_error, vfrom};
+	}
+
+	const auto [to_error, vto] = translate_to_sv(to);
+
+	if (to_error)
+	{
+		return {to_error, vto};
+	}
+
+	const std::string local_from = vfs::get(vfrom);
 	const std::string local_to = vfs::get(vto);
 
 	const auto mp = lv2_fs_object::get_mp(vfrom);
@@ -1254,13 +1471,13 @@ error_code sys_fs_rmdir(ppu_thread& ppu, vm::cptr<char> path)
 
 	sys_fs.warning("sys_fs_rmdir(path=%s)", path);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath);
 
 	const auto mp = lv2_fs_object::get_mp(vpath);
@@ -1305,13 +1522,13 @@ error_code sys_fs_unlink(ppu_thread& ppu, vm::cptr<char> path)
 
 	sys_fs.warning("sys_fs_unlink(path=%s)", path);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath);
 
 	const auto mp = lv2_fs_object::get_mp(vpath);
@@ -1465,6 +1682,8 @@ error_code sys_fs_fcntl(ppu_thread& ppu, u32 fd, u32 op, vm::ptr<void> _arg, u32
 			: file->op_write(arg->buf, arg->size);
 
 		ensure(old_pos == file->file.seek(old_pos));
+
+		// TODO: EDATA corruption detection
 
 		arg->out_code = CELL_OK;
 		return CELL_OK;
@@ -1960,11 +2179,6 @@ error_code sys_fs_fget_block_size(ppu_thread& ppu, u32 fd, vm::ptr<u64> sector_s
 		return CELL_EBADF;
 	}
 
-	if (ppu.is_stopped())
-	{
-		return {};
-	}
-
 	// TODO
 	*sector_size = file->mp->sector_size;
 	*block_size = file->mp->block_size;
@@ -1980,13 +2194,13 @@ error_code sys_fs_get_block_size(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<u
 
 	sys_fs.warning("sys_fs_get_block_size(path=%s, sector_size=*0x%x, block_size=*0x%x, arg4=*0x%x)", path, sector_size, block_size, arg4);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath);
 
 	if (vpath.find_first_not_of('/') == umax)
@@ -2014,11 +2228,6 @@ error_code sys_fs_get_block_size(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<u
 		return {CELL_EIO, path}; // ???
 	}
 
-	if (ppu.is_stopped())
-	{
-		return {};
-	}
-
 	// TODO
 	*sector_size = mp->sector_size;
 	*block_size = mp->block_size;
@@ -2034,13 +2243,13 @@ error_code sys_fs_truncate(ppu_thread& ppu, vm::cptr<char> path, u64 size)
 
 	sys_fs.warning("sys_fs_truncate(path=%s, size=0x%llx)", path, size);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath);
 
 	const auto mp = lv2_fs_object::get_mp(vpath);
@@ -2227,13 +2436,13 @@ error_code sys_fs_utime(ppu_thread& ppu, vm::cptr<char> path, vm::cptr<CellFsUti
 	sys_fs.warning("sys_fs_utime(path=%s, timep=*0x%x)", path, timep);
 	sys_fs.warning("** actime=%u, modtime=%u", timep->actime, timep->modtime);
 
-	if (!path)
-		return CELL_EFAULT;
+	const auto [path_error, vpath] = translate_to_sv(path);
 
-	if (!path[0])
-		return CELL_ENOENT;
+	if (path_error)
+	{
+		return {path_error, vpath};
+	}
 
-	const std::string_view vpath = path.get_ptr();
 	const std::string local_path = vfs::get(vpath);
 
 	const auto mp = lv2_fs_object::get_mp(vpath);

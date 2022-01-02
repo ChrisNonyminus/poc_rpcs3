@@ -26,6 +26,15 @@
 #ifdef _WIN32
 #include <windows.h>
 #include "util/dyn_lib.hpp"
+
+// TODO(cjj19970505@live.cn)
+// When compiling with WIN32_LEAN_AND_MEAN definition
+// NTSTATUS is defined in CMake build but not in VS build
+// May be caused by some different header pre-inclusion between CMake and VS configurations.
+#if !defined(NTSTATUS)
+// Copied from ntdef.h
+typedef _Return_type_success_(return >= 0) LONG NTSTATUS;
+#endif
 DYNAMIC_IMPORT("ntdll.dll", NtQueryTimerResolution, NTSTATUS(PULONG MinimumResolution, PULONG MaximumResolution, PULONG CurrentResolution));
 DYNAMIC_IMPORT("ntdll.dll", NtSetTimerResolution, NTSTATUS(ULONG DesiredResolution, BOOLEAN SetResolution, PULONG CurrentResolution));
 #else
@@ -65,6 +74,7 @@ static atomic_t<bool> s_no_gui = false;
 static atomic_t<char*> s_argv0;
 
 extern thread_local std::string(*g_tls_log_prefix)();
+extern thread_local std::string_view g_tls_serialize_name;
 
 #ifndef _WIN32
 extern char **environ;
@@ -85,6 +95,17 @@ LOG_CHANNEL(q_debug, "QDEBUG");
 
 		// Always print thread id
 		fmt::append(buf, "\nThread id = %s.", std::this_thread::get_id());
+	}
+
+	if (!g_tls_serialize_name.empty())
+	{
+		// Copy only when needed
+		if (!buf.empty())
+		{
+			buf = std::string(_text);
+		}
+
+		fmt::append(buf, "\nSerialized Object: %s", g_tls_serialize_name);
 	}
 
 	const std::string_view text = buf.empty() ? _text : buf;
@@ -226,22 +247,24 @@ struct fatal_error_listener final : logs::listener
 	}
 };
 
-constexpr auto arg_headless   = "headless";
-constexpr auto arg_no_gui     = "no-gui";
-constexpr auto arg_high_dpi   = "hidpi";
-constexpr auto arg_rounding   = "dpi-rounding";
-constexpr auto arg_styles     = "styles";
-constexpr auto arg_style      = "style";
-constexpr auto arg_stylesheet = "stylesheet";
-constexpr auto arg_config     = "config";
-constexpr auto arg_q_debug    = "qDebug";
-constexpr auto arg_error      = "error";
-constexpr auto arg_updating   = "updating";
-constexpr auto arg_user_id    = "user-id";
-constexpr auto arg_installfw  = "installfw";
-constexpr auto arg_installpkg = "installpkg";
-constexpr auto arg_commit_db  = "get-commit-db";
-constexpr auto arg_timer      = "high-res-timer";
+constexpr auto arg_headless     = "headless";
+constexpr auto arg_no_gui       = "no-gui";
+constexpr auto arg_high_dpi     = "hidpi";
+constexpr auto arg_rounding     = "dpi-rounding";
+constexpr auto arg_styles       = "styles";
+constexpr auto arg_style        = "style";
+constexpr auto arg_stylesheet   = "stylesheet";
+constexpr auto arg_config       = "config";
+constexpr auto arg_q_debug      = "qDebug";
+constexpr auto arg_error        = "error";
+constexpr auto arg_updating     = "updating";
+constexpr auto arg_user_id      = "user-id";
+constexpr auto arg_installfw    = "installfw";
+constexpr auto arg_installpkg   = "installpkg";
+constexpr auto arg_commit_db    = "get-commit-db";
+constexpr auto arg_savestate    = "savestate";
+constexpr auto arg_timer        = "high-res-timer";
+constexpr auto arg_verbose_curl = "verbose-curl";
 
 int find_arg(std::string arg, int& argc, char* argv[])
 {
@@ -531,17 +554,37 @@ int main(int argc, char** argv)
 	parser.addOption(installpkg_option);
 	const QCommandLineOption user_id_option(arg_user_id, "Start RPCS3 as this user.", "user id", "");
 	parser.addOption(user_id_option);
+	const QCommandLineOption savestate_option(arg_savestate, "Path for directly loading a savestate.", "path", "");
+	parser.addOption(savestate_option);
 	parser.addOption(QCommandLineOption(arg_q_debug, "Log qDebug to RPCS3.log."));
 	parser.addOption(QCommandLineOption(arg_error, "For internal usage."));
 	parser.addOption(QCommandLineOption(arg_updating, "For internal usage."));
 	parser.addOption(QCommandLineOption(arg_commit_db, "Update commits.lst cache. Optional arguments: <path> <sha>"));
 	parser.addOption(QCommandLineOption(arg_timer, "Enable high resolution timer for better performance (windows)", "enabled", "1"));
+	parser.addOption(QCommandLineOption(arg_verbose_curl, "Enable verbose curl logging."));
 	parser.process(app->arguments());
 
 	// Don't start up the full rpcs3 gui if we just want the version or help.
 	if (parser.isSet(version_option) || parser.isSet(help_option))
 		return 0;
 
+	// Set curl to verbose if needed
+	rpcs3::curl::g_curl_verbose = parser.isSet(arg_verbose_curl);
+
+	if (rpcs3::curl::g_curl_verbose)
+	{
+#ifdef _WIN32
+		if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole())
+		{
+			[[maybe_unused]] const auto con_out = freopen("CONOUT$", "w", stdout);
+			[[maybe_unused]] const auto con_err = freopen("CONOUT$", "w", stderr);
+		}
+#endif
+		fprintf(stdout, "Enabled Curl verbose logging.\n");
+		sys_log.always()("Enabled Curl verbose logging. Please look at your console output.");
+	}
+
+	// Handle update of commit database
 	if (parser.isSet(arg_commit_db))
 	{
 #ifdef _WIN32
@@ -619,7 +662,7 @@ int main(int argc, char** argv)
 		QByteArray buf;
 
 		// CURL handle to work with GitHub API
-		curl_handle curl;
+		rpcs3::curl::curl_handle curl;
 
 		struct curl_slist* hhdr{};
 		hhdr = curl_slist_append(hhdr, "Accept: application/vnd.github.v3+json");
@@ -657,10 +700,14 @@ int main(int argc, char** argv)
 				break;
 			}
 
+			// Reset error buffer before we call curl_easy_perform
+			curl.reset_error_buffer();
+
 			err = curl_easy_perform(curl);
 			if (err != CURLE_OK)
 			{
-				fprintf(stderr, "Curl error:\n%s", curl_easy_strerror(err));
+				const std::string error_string = curl.get_verbose_error(err);
+				fprintf(stderr, "curl_easy_perform(): %s", error_string.c_str());
 				break;
 			}
 
@@ -901,7 +948,32 @@ int main(int argc, char** argv)
 		sys_log.notice("Option passed via command line: %s %s", opt.toStdString(), parser.value(opt).toStdString());
 	}
 
-	if (const QStringList args = parser.positionalArguments(); !args.isEmpty() && !is_updating && !parser.isSet(arg_installfw) && !parser.isSet(arg_installpkg))
+	if (parser.isSet(arg_savestate))
+	{
+		const std::string savestate_path = parser.value(savestate_option).toStdString();
+		sys_log.notice("Booting savestate from command line: %s", savestate_path);
+
+		if (!fs::is_file(savestate_path))
+		{
+			report_fatal_error(fmt::format("No savestate file found: %s", savestate_path));
+		}
+
+		Emu.CallAfter([path = savestate_path]()
+		{
+			Emu.SetForceBoot(true);
+
+			if (const game_boot_result error = Emu.BootGame(path); error != game_boot_result::no_errors)
+			{
+				sys_log.error("Booting savestate '%s' failed: reason: %s", path, error);
+
+				if (s_headless || s_no_gui)
+				{
+					report_fatal_error(fmt::format("Booting savestate '%s' failed!\n\nReason: %s", path, error));
+				}
+			}
+		});
+	}
+	else if (const QStringList args = parser.positionalArguments(); !args.isEmpty() && !is_updating && !parser.isSet(arg_installfw) && !parser.isSet(arg_installpkg))
 	{
 		sys_log.notice("Booting application from command line: %s", args.at(0).toStdString());
 
@@ -951,6 +1023,7 @@ int main(int argc, char** argv)
 			}
 		});
 	}
+
 
 	// run event loop (maybe only needed for the gui application)
 	return app->exec();

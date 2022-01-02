@@ -41,7 +41,7 @@ extern thread_local std::string(*g_tls_log_prefix)();
 template <>
 bool serialize<rsx::rsx_state>(utils::serial& ar, rsx::rsx_state& o)
 {
-	return ar(o.transform_program, /*o.transform_constants,*/ o.registers);
+	return ar(o.transform_program, o.transform_constants, o.registers);
 }
 
 template <>
@@ -67,6 +67,35 @@ template <>
 bool serialize<rsx::frame_capture_data::replay_command>(utils::serial& ar, rsx::frame_capture_data::replay_command& o)
 {
 	return ar(o.rsx_command, o.memory_state, o.tile_state, o.display_buffer_state);
+}
+
+template <>
+bool serialize<rsx::rsx_iomap_table>(utils::serial& ar, rsx::rsx_iomap_table& o)
+{
+	// We do not need more than that
+	ar(std::span(o.ea.data(), 512));
+
+	if (!ar.is_writing())
+	{
+		// Populate o.io
+		for (const atomic_t<u32>& ea_addr : o.ea)
+		{
+			const u32& addr = ea_addr.raw();
+
+			if (addr != umax)
+			{
+				o.io[addr >> 20].raw() = static_cast<u32>(&ea_addr - o.ea.data()) << 20;
+			}
+		}
+	}
+
+	return true;
+}
+
+template <>
+void fxo_serialize<rsx::avconf>(utils::serial* ar)
+{
+	fxo_serialize_body<rsx::avconf>(ar);
 }
 
 namespace rsx
@@ -403,7 +432,24 @@ namespace rsx
 		g_access_violation_handler = nullptr;
 	}
 
-	thread::thread()
+	void thread::serialize_common(utils::serial& ar)
+	{
+		ar(rsx::method_registers);
+	
+		for (auto& v : vertex_push_buffers)
+		{
+			ar(v.attr, v.size, v.type, v.vertex_count, v.dword_count, v.data);
+		}
+
+		ar(element_push_buffer, fifo_ret_addr, saved_fifo_ret, zcull_surface_active, m_surface_info, m_depth_surface_info, m_framebuffer_layout);
+		ar(dma_address, iomap_table, restore_point, tiles, zculls, display_buffers, display_buffers_count, current_display_buffer);
+		ar(enable_second_vhandler, requested_vsync);
+		ar(device_addr, label_addr, main_mem_size, local_mem_size, rsx_event_port, driver_info);
+		ar(in_begin_end, zcull_stats_enabled, zcull_rendering_enabled, zcull_pixel_cnt_enabled);
+		ar(display_buffers, display_buffers_count, current_display_buffer);
+	}
+
+	thread::thread(utils::serial* _ar)
 		: cpu_thread(0x5555'5555)
 	{
 		g_access_violation_handler = [this](u32 address, bool is_writing)
@@ -425,6 +471,41 @@ namespace rsx
 		}
 
 		state -= cpu_flag::stop + cpu_flag::wait; // TODO: Remove workaround
+
+		if (!_ar)
+		{
+			return;
+		}
+
+		serialized = true;
+		serialize_common(*_ar);
+
+		if (dma_address)
+		{
+			ctrl = vm::_ptr<RsxDmaControl>(dma_address);
+			m_rsx_thread_exiting = false;
+		}
+
+		if (g_cfg.savestate.start_paused)
+		{
+			m_pause_on_first_flip = true;
+		}
+	}
+
+	void thread::save(utils::serial& ar)
+	{
+		USING_SERIALIZATION_VERSION(rsx);
+		serialize_common(ar);
+	}
+
+	avconf::avconf(utils::serial& ar)
+	{
+		ar(*this);
+	}
+
+	void avconf::save(utils::serial& ar)
+	{
+		ar(*this);
 	}
 
 	void thread::capture_frame(const std::string &name)
@@ -473,26 +554,28 @@ namespace rsx
 
 	void thread::append_to_push_buffer(u32 attribute, u32 size, u32 subreg_index, vertex_base_type type, u32 value)
 	{
-		vertex_push_buffers[attribute].size = size;
-		vertex_push_buffers[attribute].append_vertex_data(subreg_index, type, value);
+		if (!(rsx::method_registers.vertex_attrib_input_mask() & (1 << attribute)))
+		{
+			return;
+		}
+
+		// Enforce ATTR0 as vertex attribute for push buffers.
+		// This whole thing becomes a mess if we don't have a provoking attribute.
+		const auto vertex_id = vertex_push_buffers[0].get_vertex_id();
+		vertex_push_buffers[attribute].set_vertex_data(attribute, vertex_id, subreg_index, type, size, value);
 	}
 
 	u32 thread::get_push_buffer_vertex_count() const
 	{
-		//There's no restriction on which attrib shall hold vertex data, so we check them all
-		u32 max_vertex_count = 0;
-		for (auto &buf: vertex_push_buffers)
-		{
-			max_vertex_count = std::max(max_vertex_count, buf.vertex_count);
-		}
-
-		return max_vertex_count;
+		// Enforce ATTR0 as vertex attribute for push buffers.
+		// This whole thing becomes a mess if we don't have a provoking attribute.
+		return vertex_push_buffers[0].vertex_count;
 	}
 
 	void thread::append_array_element(u32 index)
 	{
-		//Endianness is swapped because common upload code expects input in BE
-		//TODO: Implement fast upload path for LE inputs and do away with this
+		// Endianness is swapped because common upload code expects input in BE
+		// TODO: Implement fast upload path for LE inputs and do away with this
 		element_push_buffer.push_back(std::bit_cast<u32, be_t<u32>>(index));
 	}
 
@@ -582,7 +665,7 @@ namespace rsx
 			return fmt::format("RSX [0x%07x]", rsx->ctrl ? +rsx->ctrl->get : 0);
 		};
 
-		method_registers.init();
+		if (!serialized) method_registers.init();
 
 		rsx::overlays::reset_performance_overlay();
 
@@ -600,8 +683,10 @@ namespace rsx
 
 		performance_counters.state = FIFO_state::empty;
 
+		Emu.CallAfter([]{ Emu.RunPPU(); });
+
 		// Wait for startup (TODO)
-		while (m_rsx_thread_exiting)
+		while (m_rsx_thread_exiting || Emu.IsPaused())
 		{
 			// Wait for external pause events
 			if (external_interrupt_lock)
@@ -623,6 +708,11 @@ namespace rsx
 			thread_ctrl::wait_for(1000);
 		}
 
+		if (is_stopped())
+		{
+			return;
+		}
+
 		performance_counters.state = FIFO_state::running;
 
 		fifo_ctrl = std::make_unique<::rsx::FIFO::FIFO_control>(this);
@@ -641,20 +731,45 @@ namespace rsx
 #endif
 			u64 start_time = get_system_time();
 
+			u64 vblank_rate = g_cfg.video.vblank_rate;
+			u64 vblank_period = 1'000'000 + u64{g_cfg.video.vblank_ntsc.get()} * 1000;
+
+			u64 local_vblank_count = 0;
+
 			// TODO: exit condition
 			while (!is_stopped())
 			{
+				// Get current time
 				const u64 current = get_system_time();
-				const u64 period_time = 1000000 / g_cfg.video.vblank_rate;
-				const u64 wait_for = period_time - std::min<u64>(current - start_time, period_time);
+
+				// Calculate the time at which we need to send a new VBLANK signal
+				const u64 post_event_time = start_time + (local_vblank_count + 1) * vblank_period / vblank_rate;
+
+				// Calculate time remaining to that time (0 if we passed it)
+				const u64 wait_for = current >= post_event_time ? 0 : post_event_time - current;
+
+				// Substract host operating system min sleep quantom to get sleep time
 				const u64 wait_sleep = wait_for - u64{wait_for >= host_min_quantum} * host_min_quantum;
 
 				if (!wait_for)
 				{
 					{
-						start_time += period_time;
+						local_vblank_count++;
 						vblank_count++;
 
+						if (local_vblank_count == vblank_rate)
+						{
+							// Advance start_time to the moment of the current VBLANK
+							// Which is the last VBLANK event in this period
+							// This is in order for multiplication by ratio above to use only small numbers
+							start_time += vblank_period;
+							local_vblank_count = 0;
+
+							// We have a rare chance to update settings without losing precision whenever local_vblank_count is 0
+							vblank_rate = g_cfg.video.vblank_rate;
+							vblank_period = 1'000'000 + u64{g_cfg.video.vblank_ntsc.get()} * 1000;
+						}
+	
 						if (isHLE)
 						{
 							if (vblank_handler)
@@ -671,7 +786,7 @@ namespace rsx
 						}
 						else
 						{
-							sys_rsx_context_attribute(0x55555555, 0xFED, 1, 0, 0, 0);
+							sys_rsx_context_attribute(0x55555555, 0xFED, 1, post_event_time, 0, 0);
 						}
 					}
 				}
@@ -691,7 +806,7 @@ namespace rsx
 
 					while (Emu.IsPaused() && !is_stopped())
 					{
-						thread_ctrl::wait_for(wait_sleep);
+						thread_ctrl::wait_for(5'000);
 					}
 
 					// Restore difference
@@ -737,6 +852,11 @@ namespace rsx
 
 	void thread::on_exit()
 	{
+		if (zcull_ctrl)
+		{
+			zcull_ctrl->sync(this);
+		}
+
 		// Deregister violation handler
 		g_access_violation_handler = nullptr;
 
@@ -744,7 +864,6 @@ namespace rsx
 		std::this_thread::sleep_for(10ms);
 		do_local_task(rsx::FIFO_state::lock_wait);
 
-		m_rsx_thread_exiting = true;
 		g_fxo->get<rsx::dma_manager>().join();
 		state += cpu_flag::exit;
 	}
@@ -1009,6 +1128,13 @@ namespace rsx
 					handle_invalidated_memory_range();
 				}
 			}
+		}
+		else if (is_stopped())
+		{
+			std::lock_guard lock(m_mtx_task);
+
+			m_invalidated_memory_range = utils::address_range::start_end(0x2 << 28, 0xdu << 28);
+			handle_invalidated_memory_range();
 		}
 	}
 
@@ -1600,6 +1726,8 @@ namespace rsx
 		m_graphics_state &= ~rsx::pipeline_state::fragment_program_ucode_dirty;
 
 		const auto [program_offset, program_location] = method_registers.shader_program_address();
+		const auto prev_textures_reference_mask = current_fp_metadata.referenced_textures_mask;
+
 		auto data_ptr = vm::base(rsx::get_address(program_offset, program_location));
 		current_fp_metadata = program_hash_util::fragment_program_utils::analyse_fragment_program(data_ptr);
 
@@ -1623,6 +1751,14 @@ namespace rsx
 					break;
 				}
 			}
+		}
+
+		if (!(m_graphics_state & rsx::pipeline_state::fragment_program_state_dirty) &&
+			(prev_textures_reference_mask != current_fp_metadata.referenced_textures_mask))
+		{
+			// If different textures are used, upload their coefficients.
+			// The texture parameters transfer routine is optimized and only writes data for textures consumed by the ucode.
+			m_graphics_state |= rsx::pipeline_state::fragment_texture_state_dirty;
 		}
 	}
 
@@ -1697,7 +1833,7 @@ namespace rsx
 		current_vertex_program.texture_state.import(current_vp_texture_state, current_vp_metadata.referenced_textures_mask);
 	}
 
-	void thread::analyse_inputs_interleaved(vertex_input_layout& result) const
+	void thread::analyse_inputs_interleaved(vertex_input_layout& result)
 	{
 		const rsx_state& state = rsx::method_registers;
 		const u32 input_mask = state.vertex_attrib_input_mask() & current_vp_metadata.referenced_inputs_mask;
@@ -1765,6 +1901,9 @@ namespace rsx
 				// Observed with GT5, immediate render bypasses array pointers completely, even falling back to fixed-function register defaults
 				if (vertex_push_buffers[index].vertex_count > 1)
 				{
+					// Ensure consistent number of vertices per attribute.
+					vertex_push_buffers[index].pad_to(vertex_push_buffers[0].vertex_count, false);
+
 					// Read temp buffer (register array)
 					std::pair<u8, u32> volatile_range_info = std::make_pair(index, static_cast<u32>(vertex_push_buffers[index].data.size() * sizeof(u32)));
 					result.volatile_blocks.push_back(volatile_range_info);
@@ -2410,6 +2549,12 @@ namespace rsx
 		if (info.emu_flip)
 		{
 			performance_counters.sampled_frames++;
+
+			if (m_pause_on_first_flip)
+			{
+				Emu.Pause();
+				m_pause_on_first_flip = false;
+			}
 		}
 	}
 
@@ -2833,6 +2978,12 @@ namespace rsx
 		if (!m_invalidated_memory_range.valid())
 			return;
 
+		if (is_stopped())
+		{
+			on_invalidate_memory_range(m_invalidated_memory_range, rsx::invalidation_cause::read);
+			on_invalidate_memory_range(m_invalidated_memory_range, rsx::invalidation_cause::write);
+		}
+
 		on_invalidate_memory_range(m_invalidated_memory_range, rsx::invalidation_cause::unmap);
 		m_invalidated_memory_range.invalidate();
 	}
@@ -2998,23 +3149,32 @@ namespace rsx
 		m_profiler.enabled = !!g_cfg.video.overlay;
 	}
 
-	void thread::request_emu_flip(u32 buffer)
+	bool thread::request_emu_flip(u32 buffer)
 	{
 		if (is_current_thread()) // requested through command buffer
 		{
 			// NOTE: The flip will clear any queued flip requests
 			handle_emu_flip(buffer);
+			return true;
 		}
 		else // requested 'manually' through ppu syscall
 		{
 			if (async_flip_requested & flip_request::emu_requested)
 			{
 				// ignore multiple requests until previous happens
-				return;
+				return true;
 			}
 
 			async_flip_buffer = buffer;
 			async_flip_requested |= flip_request::emu_requested;
+
+			if (state & cpu_flag::exit)
+			{
+				async_flip_requested.clear(flip_request::emu_requested);
+				return false;
+			}
+
+			return true;
 		}
 	}
 
@@ -3067,12 +3227,6 @@ namespace rsx
 				{
 					const auto delay_us = target_rsx_flip_time - time;
 					lv2_obj::wait_timeout<false, false>(delay_us);
-
-					if (thread_ctrl::state() == thread_state::aborting)
-					{
-						return;
-					}
-
 					performance_counters.idle_time += delay_us;
 				}
 			}

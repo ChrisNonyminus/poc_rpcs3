@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "sys_spu.h"
 
 #include "Emu/System.h"
@@ -194,6 +194,127 @@ void sys_spu_image::deploy(u8* loc, std::span<const sys_spu_segment> segs)
 	spu_log.notice("Loaded SPU image: %s (<- %u)%s", hash, applied.size(), dump);
 }
 
+lv2_spu_group::lv2_spu_group(utils::serial& ar) noexcept
+	: name(ar.operator std::string())
+	, id(idm::last_id())
+	, max_num(ar)
+	, mem_size(ar)
+	, type(ar) // SPU Thread Group Type
+	, ct(lv2_memory_container::search(ar))
+	, has_scheduler_context(ar.operator u8())
+	, max_run(ar) // TODO: Recover from setting
+	, init(ar)
+	, prio(ar)
+	, run_state(ar.operator spu_group_status())
+	, exit_status(ar)
+{
+	for (auto& thread : threads)
+	{
+		if (ar.operator u8())
+		{
+			ar(id_manager::g_id);
+			thread = std::make_shared<named_thread<spu_thread>>(ar, this);
+			idm::import_existing<named_thread<spu_thread>>(thread, idm::last_id());
+			running += !thread->stop_flag_removal_protection;
+		}
+	}
+
+	ar(threads_map);
+	ar(imgs);
+	ar(args);
+
+	for (auto ep : {&ep_run, &ep_exception, &ep_sysmodule})
+	{
+		*ep = idm::get_unlocked<lv2_obj, lv2_event_queue>(ar.operator u32());
+	}
+
+	switch (run_state)
+	{
+	//case SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED:
+	//case SPU_THREAD_GROUP_STATUS_INITIALIZED:
+	//case SPU_THREAD_GROUP_STATUS_READY:
+	//case SPU_THREAD_GROUP_STATUS_WAITING:
+	case SPU_THREAD_GROUP_STATUS_SUSPENDED:
+	{
+		// Suspend all SPU threads
+		for (const auto& thread : threads)
+		{
+			if (thread)
+			{
+				thread->state += cpu_flag::suspend;
+			}
+		}
+
+		break;
+	}
+	//case SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED:
+	//case SPU_THREAD_GROUP_STATUS_RUNNING:
+	//case SPU_THREAD_GROUP_STATUS_STOPPED:
+	//case SPU_THREAD_GROUP_STATUS_UNKNOWN:
+	}
+}
+
+void lv2_spu_group::save(utils::serial& ar)
+{
+	USING_SERIALIZATION_VERSION(spu);
+
+	spu_group_status _run_state = run_state;
+
+	switch (_run_state)
+	{
+	//case SPU_THREAD_GROUP_STATUS_NOT_INITIALIZED:
+	//case SPU_THREAD_GROUP_STATUS_INITIALIZED:
+	//case SPU_THREAD_GROUP_STATUS_READY:
+
+	// Waiting SPU should recover this
+	case SPU_THREAD_GROUP_STATUS_WAITING: _run_state = SPU_THREAD_GROUP_STATUS_RUNNING; break;
+	case SPU_THREAD_GROUP_STATUS_WAITING_AND_SUSPENDED: _run_state = SPU_THREAD_GROUP_STATUS_SUSPENDED; break;
+	//case SPU_THREAD_GROUP_STATUS_RUNNING:
+	//case SPU_THREAD_GROUP_STATUS_STOPPED:
+	//case SPU_THREAD_GROUP_STATUS_UNKNOWN:
+	}
+
+	ar(name, max_num, mem_size, type, ct->id, has_scheduler_context, max_run, init, prio, _run_state, exit_status);
+
+	for (const auto& thread : threads)
+	{
+		ar(u8{thread.operator bool()});
+
+		if (thread)
+		{
+			ar(thread->id);
+			thread->save(ar);
+		}
+	}
+
+	ar(threads_map);
+	ar(imgs);
+	ar(args);
+
+	for (auto ep : {&ep_run, &ep_exception, &ep_sysmodule})
+	{
+		ar(lv2_obj::check(*ep) ? (*ep)->id : 0);
+	}
+}
+
+template <>
+void fxo_serialize<id_manager::id_map<lv2_spu_group>>(utils::serial* ar)
+{
+	fxo_serialize_body<id_manager::id_map<lv2_spu_group>>(ar);
+}
+
+lv2_spu_image::lv2_spu_image(utils::serial& ar)
+	: e_entry(ar)
+	, segs(ar.operator decltype(segs)())
+	, nsegs(ar)
+{
+}
+
+void lv2_spu_image::save(utils::serial& ar)
+{
+	ar(e_entry, segs, nsegs);
+}
+
 // Get spu thread ptr, returns group ptr as well for refcounting
 std::pair<named_thread<spu_thread>*, std::shared_ptr<lv2_spu_group>> lv2_spu_group::get_thread(u32 id)
 {
@@ -332,7 +453,7 @@ error_code sys_spu_image_open(ppu_thread& ppu, vm::ptr<sys_spu_image> img, vm::c
 		return {fs_error, path};
 	}
 
-	u128 klic = g_fxo->get<loaded_npdrm_keys>().devKlic.load();
+	u128 klic = g_fxo->get<loaded_npdrm_keys>().last_key();
 
 	const fs::file elf_file = decrypt_self(std::move(file), reinterpret_cast<u8*>(&klic));
 
@@ -447,6 +568,75 @@ error_code sys_spu_thread_initialize(ppu_thread& ppu, vm::ptr<u32> thread, u32 g
 	default: return CELL_EINVAL;
 	}
 
+	std::vector<sys_spu_segment> spu_segs(image.segs.get_ptr(), image.segs.get_ptr() + image.nsegs);
+
+	bool found_info_segment = false;
+	bool found_copy_segment = false;
+
+	for (const auto& seg : spu_segs)
+	{
+		if (image.type == SYS_SPU_IMAGE_TYPE_KERNEL)
+		{
+			// Assume valid, values are coming from LV2
+			found_copy_segment = true;
+			break;
+		}
+
+		switch (seg.type)
+		{
+		case SYS_SPU_SEGMENT_TYPE_COPY:
+		{
+			if (seg.addr % 4)
+			{
+				// 4-bytes unaligned address is not valid
+				return CELL_EINVAL;
+			}
+
+			found_copy_segment = true;
+			break;
+		}
+		case SYS_SPU_SEGMENT_TYPE_FILL:
+		{
+			break;
+		}
+		case SYS_SPU_SEGMENT_TYPE_INFO:
+		{
+			// There can only be one INFO segment at max
+			if (seg.size > 256u || found_info_segment)
+			{
+				return CELL_EINVAL;
+			}
+
+			found_info_segment = true;
+			continue;
+		}
+		default: return CELL_EINVAL;
+		}
+
+		if (!seg.size || (seg.ls | seg.size) % 0x10 || seg.ls >= SPU_LS_SIZE || seg.size > SPU_LS_SIZE)
+		{
+			return CELL_EINVAL;
+		}
+
+		for (auto it = spu_segs.data(); it != &seg; it++)
+		{
+			if (it->type != SYS_SPU_SEGMENT_TYPE_INFO)
+			{
+				if (seg.ls + seg.size > it->ls && it->ls + it->size > seg.ls)
+				{
+					// Overlapping segments are not allowed
+					return CELL_EINVAL;
+				}
+			}
+		}
+	}
+
+	// There must be at least one COPY segment
+	if (!found_copy_segment)
+	{
+		return CELL_EINVAL;
+	}
+
 	// Read thread name
 	const std::string thread_name(attr->name.get_ptr(), std::max<u32>(attr->name_len, 1) - 1);
 
@@ -500,7 +690,7 @@ error_code sys_spu_thread_initialize(ppu_thread& ppu, vm::ptr<u32> thread, u32 g
 
 	group->args[inited] = {arg->arg1, arg->arg2, arg->arg3, arg->arg4};
 	group->imgs[inited].first = image.entry_point;
-	group->imgs[inited].second.assign(image.segs.get_ptr(), image.segs.get_ptr() + image.nsegs);
+	group->imgs[inited].second = std::move(spu_segs);
 
 	if (++group->init == group->max_num)
 	{
@@ -1200,8 +1390,21 @@ error_code sys_spu_thread_group_join(ppu_thread& ppu, u32 id, vm::ptr<u32> cause
 		{
 			const auto state = ppu.state.fetch_sub(cpu_flag::signal);
 
-			if (is_stopped(state) || state & cpu_flag::signal)
+			if (state & cpu_flag::signal)
 			{
+				break;
+			}
+
+			if (is_stopped(state))
+			{
+				std::lock_guard lock(group->mutex);
+
+				if (!group->waiter)
+				{
+					break;
+				}
+
+				ppu.state += cpu_flag::incomplete_syscall;
 				break;
 			}
 

@@ -1,8 +1,3 @@
-#ifdef _WIN32
-// This is to avoid inclusion of winsock.h from windows.h header which creates conflicts with inclusion of winsock2.h later
-#define _WINSOCKAPI_
-#endif
-
 #include "gui_application.h"
 
 #include "qt_utils.h"
@@ -46,7 +41,7 @@
 #include "Emu/RSX/Null/NullGSRender.h"
 #include "Emu/RSX/GL/GLGSRender.h"
 
-#if defined(_WIN32) || defined(HAVE_VULKAN)
+#if defined(HAVE_VULKAN)
 #include "Emu/RSX/VK/VKGSRender.h"
 #endif
 
@@ -328,24 +323,24 @@ void gui_application::InitializeCallbacks()
 		RequestCallAfter(std::move(func));
 	};
 
-	callbacks.init_gs_render = []()
+	callbacks.init_gs_render = [](utils::serial* ar)
 	{
 		switch (g_cfg.video.renderer.get())
 		{
 		case video_renderer::null:
 		{
-			g_fxo->init<rsx::thread, named_thread<NullGSRender>>();
+			g_fxo->init<rsx::thread, named_thread<NullGSRender>>(ar);
 			break;
 		}
 		case video_renderer::opengl:
 		{
-			g_fxo->init<rsx::thread, named_thread<GLGSRender>>();
+			g_fxo->init<rsx::thread, named_thread<GLGSRender>>(ar);
 			break;
 		}
-#if defined(_WIN32) || defined(HAVE_VULKAN)
+#if defined(HAVE_VULKAN)
 		case video_renderer::vulkan:
 		{
-			g_fxo->init<rsx::thread, named_thread<VKGSRender>>();
+			g_fxo->init<rsx::thread, named_thread<VKGSRender>>(ar);
 			break;
 		}
 #endif
@@ -422,11 +417,6 @@ void gui_application::InitializeCallbacks()
 				QSound::play(qstr(path));
 			}
 		});
-	};
-
-	callbacks.resolve_path = [](std::string_view sv)
-	{
-		return QFileInfo(QString::fromUtf8(sv.data(), static_cast<int>(sv.size()))).canonicalFilePath().toStdString();
 	};
 
 	Emu.SetCallbacks(std::move(callbacks));
@@ -531,6 +521,10 @@ void gui_application::OnChangeStyleSheetRequest()
 #ifdef __APPLE__
 		locs << QCoreApplication::applicationDirPath() + "/../Resources/GuiConfigs/";
 #else
+#ifdef DATADIR
+		const QString data_dir = (DATADIR);
+		locs << data_dir + "/GuiConfigs/";
+#endif
 		locs << QCoreApplication::applicationDirPath() + "/../share/rpcs3/GuiConfigs/";
 #endif
 		locs << QCoreApplication::applicationDirPath() + "/GuiConfigs/";
