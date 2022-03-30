@@ -41,5 +41,6 @@ extern "C" __declspec(dllexport) void ManagedWrapper_pause()
 
 extern "C" __declspec(dllexport) void ManagedWrapper_resume()
 {
+	Emu.Stop(true, true);
 	Emu.Resume();
 }
