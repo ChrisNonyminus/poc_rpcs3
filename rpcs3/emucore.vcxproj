@@ -450,6 +450,7 @@
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Vanguard\VanguardWrapper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\3rdparty\stblib\include\stb_image.h" />
@@ -815,6 +816,7 @@
     <ClInclude Include="util\shared_ptr.hpp" />
     <ClInclude Include="util\typeindices.hpp" />
     <ClInclude Include="util\yaml.hpp" />
+    <ClInclude Include="Vanguard\VanguardWrapper.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\3rdparty\libpng\libpng.vcxproj">

@@ -10,6 +10,8 @@
 #include "sys_event.h"
 #include "sys_vm.h"
 
+#include <windows.h>
+
 LOG_CHANNEL(sys_rsx);
 
 // Unknown error code returned by sys_rsx_context_attribute
@@ -782,6 +784,11 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 
 	case 0xFED: // hack: vblank command
 	{
+		HINSTANCE vanguard = LoadLibraryA("RPCS3Vanguard-Hook.dll"); // RTC_Hack: Execute corestep
+		typedef void (*CPUSTEP)();
+		CPUSTEP CPU_STEP = (CPUSTEP)GetProcAddress(vanguard, "CPU_STEP");
+		CPU_STEP();
+
 		if (cpu_thread::get_current<ppu_thread>())
 		{
 			// VBLANK/RSX thread only
