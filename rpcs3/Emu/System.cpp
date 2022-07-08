@@ -437,6 +437,12 @@ void Emulator::Init(bool add_only)
 	make_path_verbose(fs::get_config_dir() + "sounds/");
 	make_path_verbose(patch_engine::get_patches_path());
 
+	if (!fs::exists("RPCS3Vanguard-Hook.dll"))
+	{
+		sys_log.fatal("RPCS3Vanguard-Hook.dll not found!");
+		return;
+	}
+
 	HINSTANCE vanguard = LoadLibraryA("RPCS3Vanguard-Hook.dll"); // RTC_Hack: execute InitVanguard
 	typedef void (*InitVanguard)();
 	InitVanguard StartVanguard = (InitVanguard)GetProcAddress(vanguard, "InitVanguard");
