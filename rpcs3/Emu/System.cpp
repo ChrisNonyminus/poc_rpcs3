@@ -437,11 +437,6 @@ void Emulator::Init(bool add_only)
 	make_path_verbose(fs::get_config_dir() + "sounds/");
 	make_path_verbose(patch_engine::get_patches_path());
 
-	HINSTANCE vanguard = LoadLibraryA("RPCS3Vanguard-Hook.dll"); // RTC_Hack: execute InitVanguard
-	typedef void (*InitVanguard)();
-	InitVanguard StartVanguard = (InitVanguard)GetProcAddress(vanguard, "InitVanguard");
-	StartVanguard();
-
 	if (add_only)
 	{
 		// We don't need to initialize the rest if we only add games

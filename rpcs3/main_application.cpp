@@ -42,6 +42,11 @@ void main_application::InitializeEmulator(const std::string& user, bool show_gui
 	Emu.SetUsr(user);
 	Emu.Init();
 
+	HINSTANCE vanguard = LoadLibraryA("RPCS3Vanguard-Hook.dll"); // RTC_Hack: execute InitVanguard
+	typedef void (*InitVanguard)();
+	InitVanguard StartVanguard = (InitVanguard)GetProcAddress(vanguard, "InitVanguard");
+	StartVanguard();
+
 	// Log Firmware Version after Emu was initialized
 	const std::string firmware_version = utils::get_firmware_version();
 	const std::string firmware_string  = firmware_version.empty() ? "Missing Firmware" : ("Firmware version: " + firmware_version);
