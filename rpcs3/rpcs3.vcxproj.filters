@@ -142,6 +142,9 @@
     <Filter Include="Gui\ipc">
       <UniqueIdentifier>{91389c5b-9ebd-43fe-a288-1bbad775e528}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Vanguard">
+      <UniqueIdentifier>{d9a7b7e8-4b8a-4b82-af8c-3bef06c0cc23}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -863,6 +866,9 @@
     </ClCompile>
     <ClCompile Include="rpcs3qt\uuid.cpp">
       <Filter>Gui\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Vanguard\VanguardWrapper.cpp">
+      <Filter>Vanguard</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

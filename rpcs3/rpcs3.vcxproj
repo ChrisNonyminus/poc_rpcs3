@@ -699,6 +699,7 @@
     <ClCompile Include="rpcs3qt\save_data_list_dialog.cpp" />
     <ClCompile Include="rpcs3qt\settings_dialog.cpp" />
     <ClCompile Include="Input\xinput_pad_handler.cpp" />
+    <ClCompile Include="Vanguard\VanguardWrapper.cpp" />
     <ClCompile Include="\rpcs3qt\*.cpp" />
   </ItemGroup>
   <ItemGroup>
